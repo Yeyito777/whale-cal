@@ -1,0 +1,220 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://whale-cal.local/schema/cal-ipc-v1.json",
+  "title": "Whale Cal daemon IPC protocol",
+  "description": "One JSON object per UTF-8 line over the cald Unix socket. Clients send commands and receive events. Unknown properties are rejected by schema-aware clients.",
+  "oneOf": [
+    { "$ref": "#/$defs/command" },
+    { "$ref": "#/$defs/event" }
+  ],
+  "$defs": {
+    "requestId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$",
+      "description": "Local calendar date in YYYY-MM-DD form. Receivers also validate that the date exists."
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$",
+      "description": "Local wall time in HH:mm form."
+    },
+    "recurrence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["frequency", "interval"],
+      "properties": {
+        "frequency": { "enum": ["daily", "weekly", "monthly", "yearly"] },
+        "interval": { "type": "integer", "minimum": 1, "maximum": 999 },
+        "until": { "$ref": "#/$defs/date" },
+        "count": { "type": "integer", "minimum": 1, "maximum": 100000 }
+      }
+    },
+    "calendar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "color", "visible", "createdAt", "updatedAt"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
+        "visible": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "eventDraft": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["title", "startDate"],
+      "properties": {
+        "calendarId": { "type": "string" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "startDate": { "$ref": "#/$defs/date" },
+        "endDate": { "$ref": "#/$defs/date" },
+        "startTime": { "$ref": "#/$defs/time" },
+        "endTime": { "$ref": "#/$defs/time" },
+        "location": { "type": "string", "maxLength": 500 },
+        "notes": { "type": "string", "maxLength": 10000 },
+        "recurrence": { "$ref": "#/$defs/recurrence" }
+      }
+    },
+    "eventPatch": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "calendarId": { "type": "string" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "startDate": { "$ref": "#/$defs/date" },
+        "endDate": { "$ref": "#/$defs/date" },
+        "startTime": { "anyOf": [{ "$ref": "#/$defs/time" }, { "type": "null" }] },
+        "endTime": { "anyOf": [{ "$ref": "#/$defs/time" }, { "type": "null" }] },
+        "location": { "type": ["string", "null"], "maxLength": 500 },
+        "notes": { "type": ["string", "null"], "maxLength": 10000 },
+        "recurrence": { "anyOf": [{ "$ref": "#/$defs/recurrence" }, { "type": "null" }] }
+      }
+    },
+    "calendarEvent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "calendarId", "title", "startDate", "endDate", "createdAt", "updatedAt"],
+      "properties": {
+        "id": { "type": "string" },
+        "calendarId": { "type": "string" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "startDate": { "$ref": "#/$defs/date" },
+        "endDate": { "$ref": "#/$defs/date" },
+        "startTime": { "$ref": "#/$defs/time" },
+        "endTime": { "$ref": "#/$defs/time" },
+        "location": { "type": "string", "maxLength": 500 },
+        "notes": { "type": "string", "maxLength": 10000 },
+        "recurrence": { "$ref": "#/$defs/recurrence" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "occurrence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "event", "startDate", "endDate", "occurrenceIndex"],
+      "properties": {
+        "id": { "type": "string" },
+        "event": { "$ref": "#/$defs/calendarEvent" },
+        "startDate": { "$ref": "#/$defs/date" },
+        "endDate": { "$ref": "#/$defs/date" },
+        "occurrenceIndex": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "database": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "revision", "calendars", "events"],
+      "properties": {
+        "version": { "const": 1 },
+        "revision": { "type": "integer", "minimum": 0 },
+        "calendars": { "type": "array", "items": { "$ref": "#/$defs/calendar" }, "minItems": 1 },
+        "events": { "type": "array", "items": { "$ref": "#/$defs/calendarEvent" } }
+      }
+    },
+    "command": {
+      "oneOf": [
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "reqId"],
+          "properties": { "type": { "const": "probe" }, "reqId": { "$ref": "#/$defs/requestId" } }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "reqId"],
+          "properties": { "type": { "const": "get_schema" }, "reqId": { "$ref": "#/$defs/requestId" } }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type"],
+          "properties": { "type": { "const": "bootstrap" } }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "reqId"],
+          "properties": { "type": { "const": "list_calendars" }, "reqId": { "$ref": "#/$defs/requestId" } }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "reqId", "from", "to"],
+          "properties": {
+            "type": { "const": "list_events" },
+            "reqId": { "$ref": "#/$defs/requestId" },
+            "from": { "$ref": "#/$defs/date" },
+            "to": { "$ref": "#/$defs/date" },
+            "calendarId": { "type": "string" },
+            "query": { "type": "string", "maxLength": 500 },
+            "includeHidden": { "type": "boolean" }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "reqId", "id"],
+          "properties": { "type": { "const": "get_event" }, "reqId": { "$ref": "#/$defs/requestId" }, "id": { "type": "string" } }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "reqId", "event"],
+          "properties": { "type": { "const": "create_event" }, "reqId": { "$ref": "#/$defs/requestId" }, "event": { "$ref": "#/$defs/eventDraft" } }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "reqId", "id", "patch"],
+          "properties": { "type": { "const": "update_event" }, "reqId": { "$ref": "#/$defs/requestId" }, "id": { "type": "string" }, "patch": { "$ref": "#/$defs/eventPatch" } }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "reqId", "id"],
+          "properties": { "type": { "const": "delete_event" }, "reqId": { "$ref": "#/$defs/requestId" }, "id": { "type": "string" } }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "reqId", "name"],
+          "properties": { "type": { "const": "create_calendar" }, "reqId": { "$ref": "#/$defs/requestId" }, "name": { "type": "string", "minLength": 1, "maxLength": 100 }, "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" } }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "reqId", "id", "patch"],
+          "properties": {
+            "type": { "const": "update_calendar" }, "reqId": { "$ref": "#/$defs/requestId" }, "id": { "type": "string" },
+            "patch": {
+              "type": "object", "additionalProperties": false, "minProperties": 1,
+              "properties": { "name": { "type": "string", "minLength": 1, "maxLength": 100 }, "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }, "visible": { "type": "boolean" } }
+            }
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "reqId", "id"],
+          "properties": { "type": { "const": "delete_calendar" }, "reqId": { "$ref": "#/$defs/requestId" }, "id": { "type": "string" } }
+        }
+      ]
+    },
+    "event": {
+      "description": "Response events are selected by their type and, where present, the originating reqId. Mutation events are broadcast to every connected client.",
+      "oneOf": [
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId"], "properties": { "type": { "const": "pong" }, "reqId": { "$ref": "#/$defs/requestId" } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "protocolVersion", "schema"], "properties": { "type": { "const": "schema" }, "reqId": { "$ref": "#/$defs/requestId" }, "protocolVersion": { "const": 1 }, "schema": { "type": "object" } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "database"], "properties": { "type": { "const": "bootstrap" }, "database": { "$ref": "#/$defs/database" } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "calendars", "revision"], "properties": { "type": { "const": "calendars_list" }, "reqId": { "$ref": "#/$defs/requestId" }, "calendars": { "type": "array", "items": { "$ref": "#/$defs/calendar" } }, "revision": { "type": "integer", "minimum": 0 } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "from", "to", "occurrences", "revision"], "properties": { "type": { "const": "events_list" }, "reqId": { "$ref": "#/$defs/requestId" }, "from": { "$ref": "#/$defs/date" }, "to": { "$ref": "#/$defs/date" }, "occurrences": { "type": "array", "items": { "$ref": "#/$defs/occurrence" } }, "revision": { "type": "integer", "minimum": 0 } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "event", "revision"], "properties": { "type": { "const": "event_details" }, "reqId": { "$ref": "#/$defs/requestId" }, "event": { "$ref": "#/$defs/calendarEvent" }, "revision": { "type": "integer", "minimum": 0 } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "event", "revision"], "properties": { "type": { "enum": ["event_created", "event_updated"] }, "reqId": { "$ref": "#/$defs/requestId" }, "event": { "$ref": "#/$defs/calendarEvent" }, "revision": { "type": "integer", "minimum": 1 } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "id", "revision"], "properties": { "type": { "const": "event_deleted" }, "reqId": { "$ref": "#/$defs/requestId" }, "id": { "type": "string" }, "revision": { "type": "integer", "minimum": 1 } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "calendar", "revision"], "properties": { "type": { "enum": ["calendar_created", "calendar_updated"] }, "reqId": { "$ref": "#/$defs/requestId" }, "calendar": { "$ref": "#/$defs/calendar" }, "revision": { "type": "integer", "minimum": 1 } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "id", "revision"], "properties": { "type": { "const": "calendar_deleted" }, "reqId": { "$ref": "#/$defs/requestId" }, "id": { "type": "string" }, "revision": { "type": "integer", "minimum": 1 } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "message"], "properties": { "type": { "const": "error" }, "message": { "type": "string" }, "reqId": { "$ref": "#/$defs/requestId" } } },
+        { "type": "object", "additionalProperties": false, "required": ["type"], "properties": { "type": { "const": "daemon_shutdown" } } }
+      ]
+    }
+  }
+}

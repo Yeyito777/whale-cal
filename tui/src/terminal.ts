@@ -1,0 +1,15 @@
+const ESC = "\x1b[";
+export const enterAlt = `${ESC}?1049h`;
+export const leaveAlt = `${ESC}?1049l`;
+export const hideCursor = `${ESC}?25l`;
+export const showCursor = `${ESC}?25h`;
+export const enablePaste = `${ESC}?2004h`;
+export const disablePaste = `${ESC}?2004l`;
+export const enableMouse = `${ESC}?1003h${ESC}?1006h`;
+export const disableMouse = `${ESC}?1003l${ESC}?1006l`;
+export const enableKittyKeyboard = `${ESC}>27u`;
+export const disableKittyKeyboard = `${ESC}<u`;
+export const cursorBlock = `${ESC}2 q`;
+export const cursorBar = `${ESC}6 q`;
+export const setCursorColor = (hex: string) => `\x1b]12;${hex}\x1b\\`;
+export const resetCursorColor = `\x1b]112\x1b\\`;

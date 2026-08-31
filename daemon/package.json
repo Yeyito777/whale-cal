@@ -1,0 +1,13 @@
+{
+  "name": "whale-cal-daemon",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/main.ts",
+    "dev": "bun run --watch src/main.ts",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "dependencies": { "@whale-cal/shared": "workspace:*" }
+}

@@ -1,0 +1,31 @@
+# Dependencies and build/test output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# User calendar data, preferences, sockets, PIDs, and logs
+config/data/*
+!config/data/.gitkeep
+config/runtime/*
+!config/runtime/.gitkeep
+config/config.json
+*.log
+*.pid
+*.sock
+
+# Local environment and secret material
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+*.p12
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*~
+*.swp

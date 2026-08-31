@@ -1,0 +1,23 @@
+{
+  "name": "whale-cal",
+  "version": "0.1.0",
+  "description": "A local-first, daemon-backed terminal calendar with Vim navigation, SSH, and AI-friendly JSONL IPC.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "workspaces": ["shared", "daemon", "tui", "cli"],
+  "scripts": {
+    "start": "bun run scripts/launch.ts",
+    "tui": "bun run tui/src/main.ts",
+    "daemon": "bun run daemon/src/main.ts",
+    "cli": "bun run cli/src/main.ts",
+    "dev": "bun run scripts/launch.ts",
+    "test": "bun test",
+    "typecheck": "bunx tsc --noEmit -p shared && bunx tsc --noEmit -p daemon && bunx tsc --noEmit -p tui && bunx tsc --noEmit -p cli",
+    "check": "bun run typecheck && bun test"
+  },
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.7"
+  }
+}

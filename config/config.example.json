@@ -1,0 +1,5 @@
+{
+  "weekStartsOn": 1,
+  "timeFormat": "24h",
+  "defaultView": "month"
+}

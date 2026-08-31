@@ -1,0 +1,14 @@
+{
+  "name": "@whale-cal/shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./dates": "./src/dates.ts",
+    "./paths": "./src/paths.ts",
+    "./protocol": "./src/protocol.ts",
+    "./quick-add": "./src/quick-add.ts",
+    "./schema": "./src/schema.ts",
+    "./types": "./src/types.ts"
+  }
+}
