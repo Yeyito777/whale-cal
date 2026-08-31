@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
-SCRIPT="$(readlink -f -- "${BASH_SOURCE[0]}")"
+SCRIPT="${BASH_SOURCE[0]}"
+while [[ -L "$SCRIPT" ]]; do
+  SCRIPT_DIR="$(cd -P -- "$(dirname -- "$SCRIPT")" && pwd)"
+  SCRIPT="$(readlink "$SCRIPT")"
+  [[ "$SCRIPT" != /* ]] && SCRIPT="$SCRIPT_DIR/$SCRIPT"
+done
 ROOT="$(cd -- "$(dirname -- "$SCRIPT")/.." && pwd)"
 exec bun run "$ROOT/scripts/launch.ts" "$@"

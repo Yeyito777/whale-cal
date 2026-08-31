@@ -27,15 +27,29 @@ Set `CAL_CONFIG_DIR` to move all data/runtime files. By default they live in thi
 checkout's `config/` directory. Events are atomically persisted to
 `config/data/calendar.json`.
 
-On Linux with a systemd user session, install the commands and persistent daemon:
+## Install
+
+On macOS or Linux, install the commands and a persistent per-user daemon:
 
 ```sh
 make install
 whale-cal
 ```
 
-This links `whale-cal` and `cald` into `~/.local/bin` and enables the
-`whale-cal-daemon.service` user unit. Use `make uninstall` to remove them.
+This links `whale-cal` and `cald` into `~/.local/bin`. On macOS it installs the
+`com.whale-cal.daemon` LaunchAgent; on Linux it installs the
+`whale-cal-daemon.service` systemd user unit. The installer records Bun's absolute
+path so the daemon can start in the restricted service-manager environment.
+
+`~/.local/bin` must be in your `PATH`. To remove the commands and managed daemon
+without deleting calendar data, run:
+
+```sh
+make uninstall
+```
+
+Linux installation requires a systemd user session. macOS installation uses the
+current GUI launchd domain when available and starts automatically at login.
 
 ## Essential keys
 
