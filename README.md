@@ -70,6 +70,9 @@ current GUI launchd domain when available and starts automatically at login.
 | `Ctrl+Shift+R` | restart the connected daemon |
 | `Ctrl+C` or `/quit` | quit the TUI (daemon stays alive) |
 
+The calendar starts full-width with the optional sidebar closed. `Ctrl+S` opens
+the calendar filter and selected-day details, and that preference is remembered.
+
 The event form uses `Tab`/`Shift+Tab` (or `j`/`k` in normal mode) to move between
 fields, `i`/`a` to enter insert mode, `Esc` to return to normal mode, and
 `Ctrl+S` or `Enter` in normal mode to save.
