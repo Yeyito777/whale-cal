@@ -1,0 +1,13 @@
+{
+  "name": "cal",
+  "bin": "./bin/cal",
+  "systemHint": "You have access to the user's Whale Cal calendar through the `cal` CLI (source launcher at <exocortex-source-dir>/external-tools/cal-cli). Run `cal -h` for usage. Prefer `--json` for structured reads, use `--notes-stdin` for event notes, and remember that destructive delete commands require `--yes`.",
+  "display": {
+    "label": "Whale Cal",
+    "color": "#1d9bf0"
+  },
+  "daemon": {
+    "command": "./bin/cald-supervisor",
+    "restart": "on-failure"
+  }
+}

@@ -1,7 +1,7 @@
 PREFIX := $(HOME)/.local
 BIN_DIR := $(PREFIX)/bin
 
-.PHONY: install uninstall check
+.PHONY: install install-exocortex uninstall check
 
 install:
 	@command -v bun >/dev/null || { echo "bun is required"; exit 1; }
@@ -12,6 +12,9 @@ install:
 	@ln -sfn "$(CURDIR)/bin/cald" "$(BIN_DIR)/cald"
 	@bash scripts/install-service.sh
 	@printf '\n✓ Installed whale-cal and cald in %s\n' "$(BIN_DIR)"
+
+install-exocortex:
+	@bash scripts/install-exocortex-tool.sh "$(EXOCORTEX_DIR)"
 
 uninstall:
 	@bash scripts/uninstall-service.sh

@@ -150,8 +150,20 @@ to all connected TUIs and clients. Raw `ipc` input is forwarded without JSON
 rewriting and therefore must be a single line with a non-empty `reqId` (except
 for `bootstrap`).
 
-An Exocortex external-tool manifest can supervise `cald` and expose this client
-as `cal`; its thin launcher is in Exocortex's `external-tools/cal-cli` directory.
+### Exocortex external tool
+
+Install the thin `cal` launcher into a local Exocortex source checkout with:
+
+```sh
+make install-exocortex EXOCORTEX_DIR=/path/to/Exocortex
+```
+
+When the checkouts are sibling directories named `whale-cal` and `Exocortex`,
+`EXOCORTEX_DIR` may be omitted. Exocortex discovers the manifest automatically,
+adds `cal` to model Bash environments, and supervises `cald`. The installer
+removes Whale Cal's launchd/systemd service first so two service managers cannot
+race over the same socket. The TUI and CLI continue to use this checkout's
+existing calendar data.
 
 ## Development
 
