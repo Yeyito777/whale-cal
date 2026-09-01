@@ -273,8 +273,8 @@ function renderDeleteOverlay(state: AppState, rows: string[]): void {
 function promptRendering(state: AppState): { line: string; cursor: { row: number; col: number } | null } {
   const row = state.rows - 1;
   if (!state.prompt) {
-    const hint = state.pendingKeys ? `${theme.warning}${state.pendingKeys}` : `${theme.muted}h/j/k/l move  •  n new  •  / commands  •  ? help`;
-    return { line: segment(`${theme.vimNormal} N ${theme.text}❯ ${hint}`, state.cols), cursor: null };
+    const pending = state.pendingKeys ? ` ${theme.warning}${state.pendingKeys}` : "";
+    return { line: segment(`${theme.vimNormal} N ${theme.text}❯${pending}`, state.cols), cursor: null };
   }
   const modeLabel = state.prompt.mode === "insert" ? "I" : "N";
   const modeColor = state.prompt.mode === "insert" ? theme.vimInsert : theme.vimNormal;
@@ -311,7 +311,7 @@ export function render(state: AppState): void {
   rows[state.rows - 1] = segment(
     state.notice
       ? `${noticeColor(state.notice.kind)} ${truncate(state.notice.text, state.cols - 2)}`
-      : `${theme.muted} Ctrl+S sidebar  │  Ctrl+J/K focus  │  ${state.connected ? theme.success + "● synced" : theme.error + "○ offline"}`,
+      : `${state.connected ? theme.success + " ● synced" : theme.error + " ○ offline"}`,
     state.cols,
   );
 
