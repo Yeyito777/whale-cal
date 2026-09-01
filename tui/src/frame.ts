@@ -9,6 +9,11 @@ export interface Frame {
   cursor: string;
 }
 
+/** Draw content over a rendered row without erasing the cells on either side. */
+export function overlayAt(base: string, col: number, content: string): string {
+  return `${base}${ESC}${Math.max(1, col)}G${content}`;
+}
+
 let previous: Frame | null = null;
 
 export function invalidateFrame(): void { previous = null; }

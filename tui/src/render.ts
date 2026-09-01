@@ -4,7 +4,7 @@ import {
 } from "@whale-cal/shared/dates";
 import type { Calendar, DateKey, EventOccurrence } from "@whale-cal/shared/types";
 import { COMMANDS } from "./commands";
-import { cursorAt, flushFrame } from "./frame";
+import { cursorAt, flushFrame, overlayAt } from "./frame";
 import {
   eventsOnSelectedDate, selectedCalendar, selectedOccurrence, type AppState, type EditorState, type Notice,
 } from "./state";
@@ -16,6 +16,11 @@ function segment(content: string, target: number, bg = theme.appBg): string {
   const clipped = width(content) > target ? truncate(content, target) : content;
   const patched = clipped.replaceAll(theme.reset, `${theme.reset}${bg}`);
   return `${bg}${patched}${" ".repeat(Math.max(0, target - width(clipped)))}${theme.reset}`;
+}
+
+function putOverlayRow(rows: string[], row: number, left: number, target: number, content: string): void {
+  if (row < 0 || row >= rows.length) return;
+  rows[row] = overlayAt(rows[row]!, left, segment(content, target));
 }
 
 function noticeColor(kind: Notice["kind"]): string {
@@ -210,14 +215,13 @@ function renderAgenda(state: AppState, widthValue: number, height: number): stri
 
 function renderEditorOverlay(state: AppState, rows: string[], editor: EditorState): { row: number; col: number } | null {
   const boxWidth = Math.max(44, Math.min(76, state.cols - 4));
-  const valueWidth = boxWidth - 18;
-  const boxHeight = editor.fields.length + 4;
+  const valueWidth = boxWidth - 17;
+  const boxHeight = editor.fields.length + 3;
   const top = Math.max(2, Math.floor((state.rows - boxHeight) / 2) + 1);
   const left = Math.max(1, Math.floor((state.cols - boxWidth) / 2) + 1);
-  const full = (content: string) => segment(" ".repeat(left - 1) + content, state.cols);
+  const put = (row: number, content: string) => putOverlayRow(rows, row, left, boxWidth, content);
   const title = editor.kind === "create" ? " New event " : " Edit event ";
-  rows[top - 1] = full(`${theme.borderFocused}┌${center(`${theme.bold}${title}${theme.boldOff}`, boxWidth - 2)}┐`);
-  rows[top] = full(`${theme.borderFocused}│${theme.muted}${center("Tab fields  •  Esc normal/cancel  •  Ctrl+S save", boxWidth - 2)}${theme.borderFocused}│`);
+  put(top - 1, `${theme.borderFocused}┌${center(`${theme.bold}${title}${theme.boldOff}`, boxWidth - 2)}┐`);
   let cursor: { row: number; col: number } | null = null;
   for (let index = 0; index < editor.fields.length; index++) {
     const item = editor.fields[index]!;
@@ -225,12 +229,12 @@ function renderEditorOverlay(state: AppState, rows: string[], editor: EditorStat
     const prefix = `│ ${pad(item.label, 10)} │ `;
     const value = truncate(item.value.replace(/\n/g, "↵"), valueWidth);
     const body = `${prefix}${pad(value, valueWidth)} │`;
-    rows[top + 1 + index] = full(`${active ? theme.sidebarSelBg + theme.text : theme.appBg + theme.muted}${body}${theme.reset}${theme.borderFocused}`);
-    if (active && editor.mode === "insert") cursor = { row: top + 2 + index, col: left + width(prefix) + Math.min(editor.cursor, valueWidth - 1) };
+    put(top + index, `${active ? theme.sidebarSelBg + theme.text : theme.appBg + theme.muted}${body}${theme.reset}${theme.borderFocused}`);
+    if (active) cursor = { row: top + 1 + index, col: left + width(prefix) + Math.min(editor.cursor, valueWidth - 1) };
   }
-  rows[top + 1 + editor.fields.length] = full(`${theme.borderFocused}├${"─".repeat(boxWidth - 2)}┤`);
-  const footer = editor.mode === "insert" ? "-- INSERT --" : "-- NORMAL --   Enter save  q cancel";
-  rows[top + 2 + editor.fields.length] = full(`${theme.borderFocused}└${center(`${editor.mode === "insert" ? theme.vimInsert : theme.vimNormal}${footer}`, boxWidth - 2)}${theme.borderFocused}┘`);
+  put(top + editor.fields.length, `${theme.borderFocused}├${"─".repeat(boxWidth - 2)}┤`);
+  const mode = editor.mode === "insert" ? "-- INSERT --" : "-- NORMAL --";
+  put(top + 1 + editor.fields.length, `${theme.borderFocused}└${center(`${editor.mode === "insert" ? theme.vimInsert : theme.vimNormal}${mode}`, boxWidth - 2)}${theme.borderFocused}┘`);
   return cursor;
 }
 
@@ -246,16 +250,16 @@ function renderHelpOverlay(state: AppState, rows: string[]): void {
   const height = content.length + 6;
   const top = Math.max(2, Math.floor((state.rows - height) / 2) + 1);
   const left = Math.max(1, Math.floor((state.cols - boxWidth) / 2) + 1);
-  const full = (text: string) => segment(" ".repeat(left - 1) + text, state.cols);
-  rows[top - 1] = full(`${theme.borderFocused}┌${center(`${theme.bold} Whale Cal help `, boxWidth - 2)}┐`);
-  rows[top] = full(`${theme.borderFocused}│${theme.muted}${center("Vim-first local calendar", boxWidth - 2)}${theme.borderFocused}│`);
+  const put = (row: number, content: string) => putOverlayRow(rows, row, left, boxWidth, content);
+  put(top - 1, `${theme.borderFocused}┌${center(`${theme.bold} Whale Cal help `, boxWidth - 2)}┐`);
+  put(top, `${theme.borderFocused}│${theme.muted}${center("Vim-first local calendar", boxWidth - 2)}${theme.borderFocused}│`);
   let row = top + 1;
-  for (const [key, action] of content) rows[row++] = full(`${theme.borderFocused}│ ${theme.command}${pad(key!, 14)} ${theme.text}${pad(action!, boxWidth - 19)} ${theme.borderFocused}│`);
-  rows[row++] = full(`${theme.borderFocused}├${"─".repeat(boxWidth - 2)}┤`);
-  rows[row++] = full(`${theme.borderFocused}│${theme.muted}${center("Slash commands", boxWidth - 2)}${theme.borderFocused}│`);
+  for (const [key, action] of content) put(row++, `${theme.borderFocused}│ ${theme.command}${pad(key!, 14)} ${theme.text}${pad(action!, boxWidth - 19)} ${theme.borderFocused}│`);
+  put(row++, `${theme.borderFocused}├${"─".repeat(boxWidth - 2)}┤`);
+  put(row++, `${theme.borderFocused}│${theme.muted}${center("Slash commands", boxWidth - 2)}${theme.borderFocused}│`);
   const commandText = COMMANDS.map(([name]) => name).join("  ");
-  rows[row++] = full(`${theme.borderFocused}│ ${theme.command}${pad(truncate(commandText, boxWidth - 4), boxWidth - 4)} ${theme.borderFocused}│`);
-  rows[row] = full(`${theme.borderFocused}└${center(`${theme.muted}Esc or ? to close`, boxWidth - 2)}${theme.borderFocused}┘`);
+  put(row++, `${theme.borderFocused}│ ${theme.command}${pad(truncate(commandText, boxWidth - 4), boxWidth - 4)} ${theme.borderFocused}│`);
+  put(row, `${theme.borderFocused}└${center(`${theme.muted}Esc or ? to close`, boxWidth - 2)}${theme.borderFocused}┘`);
 }
 
 function renderDeleteOverlay(state: AppState, rows: string[]): void {
@@ -263,12 +267,12 @@ function renderDeleteOverlay(state: AppState, rows: string[]): void {
   if (!event) return;
   const boxWidth = Math.max(42, Math.min(68, state.cols - 4)), top = Math.floor(state.rows / 2) - 2;
   const left = Math.floor((state.cols - boxWidth) / 2) + 1;
-  const full = (text: string) => segment(" ".repeat(left - 1) + text, state.cols);
-  rows[top] = full(`${theme.error}┌${center(" Delete event? ", boxWidth - 2)}┐`);
-  rows[top + 1] = full(`${theme.error}│${theme.text}${center(truncate(event.title, boxWidth - 6), boxWidth - 2)}${theme.error}│`);
-  rows[top + 2] = full(`${theme.error}│${theme.muted}${center(event.recurrence ? "This deletes the entire recurring series." : formatLongDate(event.startDate), boxWidth - 2)}${theme.error}│`);
-  rows[top + 3] = full(`${theme.error}│${center(`${theme.warning}y${theme.text} delete    ${theme.command}n${theme.text} cancel`, boxWidth - 2)}${theme.error}│`);
-  rows[top + 4] = full(`${theme.error}└${"─".repeat(boxWidth - 2)}┘`);
+  const put = (row: number, content: string) => putOverlayRow(rows, row, left, boxWidth, content);
+  put(top, `${theme.error}┌${center(" Delete event? ", boxWidth - 2)}┐`);
+  put(top + 1, `${theme.error}│${theme.text}${center(truncate(event.title, boxWidth - 6), boxWidth - 2)}${theme.error}│`);
+  put(top + 2, `${theme.error}│${theme.muted}${center(event.recurrence ? "This deletes the entire recurring series." : formatLongDate(event.startDate), boxWidth - 2)}${theme.error}│`);
+  put(top + 3, `${theme.error}│${center(`${theme.warning}y${theme.text} delete    ${theme.command}n${theme.text} cancel`, boxWidth - 2)}${theme.error}│`);
+  put(top + 4, `${theme.error}└${"─".repeat(boxWidth - 2)}┘`);
 }
 
 function promptRendering(state: AppState): { line: string; cursor: { row: number; col: number } | null } {
