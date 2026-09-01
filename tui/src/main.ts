@@ -7,8 +7,8 @@ import { InputBuffer, parseInput, type KeyEvent, type MouseEvent } from "./input
 import { loadPreferences, savePreferences } from "./preferences";
 import { render } from "./render";
 import {
-  createEditor, createState, editorDraft, eventsOnSelectedDate, moveDate, selectDate, selectedCalendar,
-  selectedOccurrence, setNotice, type AppState, type EditorState,
+  createEditor, createState, cyclePanelFocus, editorDraft, eventsOnSelectedDate, exitPromptAndCycleFocus,
+  moveDate, selectDate, selectedCalendar, selectedOccurrence, setNotice, type AppState, type EditorState,
 } from "./state";
 import {
   cursorBar, disableKittyKeyboard, disableMouse, disablePaste, enableKittyKeyboard, enableMouse, enablePaste,
@@ -293,6 +293,10 @@ function handleEditorKey(key: KeyEvent): void {
 
 function handlePromptKey(key: KeyEvent): void {
   const prompt = state.prompt!;
+  if (prompt.mode === "normal" && (key.type === "ctrl-j" || key.type === "ctrl-k")) {
+    exitPromptAndCycleFocus(state);
+    return;
+  }
   if (key.type === "enter") {
     const text = prompt.text;
     state.prompt = null;
@@ -395,7 +399,7 @@ function moveSelectedEvent(amount: number): void {
 function handleNormalKey(key: KeyEvent): void {
   if (key.type === "ctrl-s") { state.sidebarOpen = !state.sidebarOpen; if (!state.sidebarOpen) state.focus = "calendar"; return; }
   if (key.type === "ctrl-j" || key.type === "ctrl-k") {
-    if (state.sidebarOpen && state.cols >= 76) state.focus = state.focus === "calendar" ? "sidebar" : "calendar";
+    cyclePanelFocus(state);
     return;
   }
   if (key.type === "ctrl-n" || key.type === "ctrl-f") { selectDate(state, addMonths(state.selectedDate, 1)); return; }

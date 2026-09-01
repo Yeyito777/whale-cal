@@ -87,6 +87,15 @@ export function selectDate(state: AppState, key: DateKey): void {
 
 export function moveDate(state: AppState, days: number): void { selectDate(state, addDays(state.selectedDate, days)); }
 
+export function cyclePanelFocus(state: AppState): void {
+  if (state.sidebarOpen && state.cols >= 76) state.focus = state.focus === "calendar" ? "sidebar" : "calendar";
+}
+
+export function exitPromptAndCycleFocus(state: AppState): void {
+  state.prompt = null;
+  cyclePanelFocus(state);
+}
+
 export function selectedCalendar(state: AppState): Calendar | null {
   if (state.database.calendars.length === 0) return null;
   state.selectedCalendarIndex = Math.max(0, Math.min(state.selectedCalendarIndex, state.database.calendars.length - 1));
