@@ -3,6 +3,7 @@ import type { Calendar, CalendarDatabase, CalendarEvent, EventDraft, EventOccurr
 export type Command =
   | { type: "probe"; reqId: string }
   | { type: "get_schema"; reqId: string }
+  | { type: "restart_daemon"; reqId: string }
   | { type: "bootstrap" }
   | { type: "list_calendars"; reqId: string }
   | {
@@ -26,6 +27,7 @@ export type MutationKind = Extract<Command, { type: `${string}_${"event" | "cale
 
 export type Event =
   | { type: "pong"; reqId: string }
+  | { type: "ack"; reqId: string }
   | { type: "schema"; reqId: string; protocolVersion: 1; schema: unknown }
   | { type: "bootstrap"; database: CalendarDatabase }
   | { type: "calendars_list"; reqId: string; calendars: Calendar[]; revision: number }

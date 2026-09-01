@@ -230,6 +230,17 @@ export class DaemonClient {
   updateCalendar(id: string, patch: Partial<Pick<Calendar, "name" | "color" | "visible">>): string { const reqId = randomUUID(); this.write({ type: "update_calendar", reqId, id, patch }); return reqId; }
   bootstrap(): void { this.write({ type: "bootstrap" }); }
 
+  /** Send an at-most-once restart request to the daemon behind the current route. */
+  restartDaemon(): boolean {
+    if (!this.wire) return false;
+    try {
+      this.wire.input.write(JSON.stringify({ type: "restart_daemon", reqId: randomUUID() }) + "\n");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   disconnect(): void {
     this.generation++;
     const wire = this.wire;

@@ -127,7 +127,7 @@ function onClientEvent(event: ClientEvent): void {
       if (event.reqId) pending.delete(event.reqId);
       notice(event.message, "error");
       return;
-    case "pong": case "daemon_shutdown": return;
+    case "pong": case "ack": case "daemon_shutdown": return;
   }
 }
 
@@ -444,6 +444,12 @@ function handleNormalKey(key: KeyEvent): void {
 }
 
 function handleKey(key: KeyEvent): void {
+  if (key.type === "ctrl-shift-r") {
+    const requested = client.restartDaemon();
+    notice(requested ? "Restarting cald…" : "Cannot restart cald while disconnected.", requested ? "info" : "error");
+    scheduleRender(true);
+    return;
+  }
   if (key.type === "ctrl-c") { cleanup(); return; }
   if (state.confirmDelete) {
     if (key.type === "char" && key.char?.toLowerCase() === "y") {

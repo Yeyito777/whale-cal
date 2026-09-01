@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./dates": "./src/dates.ts",
+    "./lifecycle": "./src/lifecycle.ts",
     "./paths": "./src/paths.ts",
     "./protocol": "./src/protocol.ts",
     "./quick-add": "./src/quick-add.ts",

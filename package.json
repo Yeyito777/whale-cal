@@ -9,7 +9,7 @@
   "scripts": {
     "start": "bun run scripts/launch.ts",
     "tui": "bun run tui/src/main.ts",
-    "daemon": "bun run daemon/src/main.ts",
+    "daemon": "bun run scripts/supervise-daemon.ts",
     "cli": "bun run cli/src/main.ts",
     "dev": "bun run scripts/launch.ts",
     "test": "bun test",

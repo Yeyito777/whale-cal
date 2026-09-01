@@ -1,6 +1,7 @@
 import { connect } from "node:net";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { pidPath, runtimeDir, socketPath, isWindows } from "@whale-cal/shared/paths";
+import { DAEMON_RESTART_EXIT_CODE } from "@whale-cal/shared/lifecycle";
 import { DaemonServer } from "./server";
 import { CalendarStore } from "./store";
 import { createHandler } from "./handler";
@@ -63,7 +64,6 @@ async function start(): Promise<void> {
   const store = new CalendarStore();
   let handler: ReturnType<typeof createHandler> | null = null;
   const server = new DaemonServer(SOCKET, (client, command) => handler?.(client, command));
-  handler = createHandler(server, store);
   let stopping = false;
   const stop = async (code = 0) => {
     if (stopping) return;
@@ -73,6 +73,7 @@ async function start(): Promise<void> {
     try { unlinkSync(PID); } catch { /* best effort */ }
     process.exit(code);
   };
+  handler = createHandler(server, store, { requestRestart: () => void stop(DAEMON_RESTART_EXIT_CODE) });
   for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(signal, () => void stop());
   process.on("uncaughtException", error => { log("error", error.stack ?? error.message); void stop(1); });
   process.on("unhandledRejection", error => { log("error", String(error)); void stop(1); });

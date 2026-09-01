@@ -5,11 +5,17 @@ import { CalendarStore } from "./store";
 import type { ClientConnection } from "./server";
 import { DaemonServer } from "./server";
 
+export interface HandlerLifecycle {
+  /** Stop this exact daemon process with the supervisor-recognized restart exit code. */
+  requestRestart?: () => void;
+}
+
 function reqId(command: Command): string | undefined {
   return "reqId" in command ? command.reqId : undefined;
 }
 
-export function createHandler(server: DaemonServer, store: CalendarStore) {
+export function createHandler(server: DaemonServer, store: CalendarStore, lifecycle: HandlerLifecycle = {}) {
+  let restartRequested = false;
   return (client: ClientConnection, command: Command): void => {
     try {
       let event: Event | null = null;
@@ -24,6 +30,17 @@ export function createHandler(server: DaemonServer, store: CalendarStore) {
             protocolVersion: CAL_IPC_PROTOCOL_VERSION,
             schema: CAL_IPC_SCHEMA,
           });
+          return;
+        case "restart_daemon":
+          if (!lifecycle.requestRestart) {
+            server.send(client, { type: "error", message: "This daemon instance cannot restart itself.", reqId: command.reqId });
+            return;
+          }
+          server.send(client, { type: "ack", reqId: command.reqId });
+          if (!restartRequested) {
+            restartRequested = true;
+            setTimeout(() => lifecycle.requestRestart?.(), 0);
+          }
           return;
         case "bootstrap":
           server.send(client, { type: "bootstrap", database: store.snapshot() });

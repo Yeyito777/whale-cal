@@ -7,4 +7,4 @@ while [[ -L "$SCRIPT" ]]; do
   [[ "$SCRIPT" != /* ]] && SCRIPT="$SCRIPT_DIR/$SCRIPT"
 done
 ROOT="$(cd -- "$(dirname -- "$SCRIPT")/.." && pwd)"
-exec bun run "$ROOT/daemon/src/main.ts" "$@"
+exec bun run "$ROOT/scripts/supervise-daemon.ts" "$@"

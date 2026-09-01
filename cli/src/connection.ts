@@ -5,6 +5,7 @@ import type { Command, Event } from "@whale-cal/shared/protocol";
 const RESPONSE_TYPES: Partial<Record<Command["type"], Event["type"]>> = {
   probe: "pong",
   get_schema: "schema",
+  restart_daemon: "ack",
   bootstrap: "bootstrap",
   list_calendars: "calendars_list",
   list_events: "events_list",

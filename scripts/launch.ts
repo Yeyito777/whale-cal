@@ -33,7 +33,7 @@ function probe(timeoutMs = 350): Promise<boolean> {
 
 async function ensureDaemon(): Promise<void> {
   if (await probe()) return;
-  const daemon = spawn(process.execPath, [resolve(root, "daemon/src/main.ts")], {
+  const daemon = spawn(process.execPath, [resolve(root, "scripts/supervise-daemon.ts")], {
     detached: true, stdio: "ignore", cwd: root,
   });
   daemon.unref();

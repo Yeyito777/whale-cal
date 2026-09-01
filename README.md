@@ -67,6 +67,7 @@ current GUI launchd domain when available and starts automatically at login.
 | `/` | command prompt (`/help` lists commands) |
 | `Ctrl+J` / `Ctrl+K` | cycle panel focus |
 | `Ctrl+S` | toggle sidebar |
+| `Ctrl+Shift+R` | restart the connected daemon |
 | `Ctrl+C` or `/quit` | quit the TUI (daemon stays alive) |
 
 The event form uses `Tab`/`Shift+Tab` (or `j`/`k` in normal mode) to move between

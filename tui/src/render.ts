@@ -239,7 +239,8 @@ function renderHelpOverlay(state: AppState, rows: string[]): void {
     ["h j k l", "move by day / week"], ["[  ]", "previous / next month"], ["t or gg", "today"],
     ["n / a", "new event"], ["e / Enter", "edit selected event"], ["d", "delete selected event"],
     ["J / K", "next / previous event"], ["v", "cycle view"], ["/", "open command prompt"],
-    ["Ctrl+J/K", "cycle panel focus"], ["Ctrl+S", "toggle sidebar"], ["q / Ctrl+C", "quit"],
+    ["Ctrl+J/K", "cycle panel focus"], ["Ctrl+S", "toggle sidebar"], ["Ctrl+Shift+R", "restart cald"],
+    ["q / Ctrl+C", "quit"],
   ];
   const boxWidth = Math.max(48, Math.min(68, state.cols - 4));
   const height = content.length + 6;

@@ -3,7 +3,7 @@ import { nextGrapheme } from "./text";
 export type KeyType = "char" | "enter" | "tab" | "backtab" | "backspace" | "delete" | "escape"
   | "left" | "right" | "up" | "down" | "home" | "end" | "paste" | "unknown"
   | "ctrl-b" | "ctrl-c" | "ctrl-d" | "ctrl-e" | "ctrl-f" | "ctrl-j" | "ctrl-k" | "ctrl-l" | "ctrl-n"
-  | "ctrl-p" | "ctrl-r" | "ctrl-s" | "ctrl-u" | "ctrl-y";
+  | "ctrl-p" | "ctrl-r" | "ctrl-s" | "ctrl-u" | "ctrl-y" | "ctrl-shift-r";
 
 export interface KeyEvent {
   type: KeyType;
@@ -31,6 +31,7 @@ function kitty(params: string): KeyEvent | null {
   if (modifier === 5 && code >= 97 && code <= 122) {
     return { type: (`ctrl-${String.fromCharCode(code)}` as KeyType), event };
   }
+  if (modifier === 6 && code === 114) return { type: "ctrl-shift-r", event };
   if (code === 13) return { type: "enter", event };
   if (code === 9) return { type: modifier === 2 ? "backtab" : "tab", event };
   if (code === 27) return { type: "escape", event };
