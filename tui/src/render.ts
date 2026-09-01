@@ -44,11 +44,13 @@ function renderTopbar(state: AppState): string {
   const leftPlain = ` Whale Cal — ${formatMonthYear(state.selectedDate)}`;
   const left = ` ${theme.bold}Whale Cal${theme.boldOff} — ${formatMonthYear(state.selectedDate)}`;
   const route = state.remoteAlias ? `SSH:${state.remoteAlias}` : "local";
-  const right = `${state.connected ? "●" : "○"} ${route} — ${state.view} `;
-  const availableLeft = Math.max(0, state.cols - width(right));
+  const status = state.connected ? "● synced" : "○ offline";
+  const rightPlain = `${status} — ${route} — ${state.view} `;
+  const right = `${state.connected ? theme.success : theme.error}${status}${theme.text} — ${route} — ${state.view} `;
+  const availableLeft = Math.max(0, state.cols - width(rightPlain));
   const shownLeft = width(leftPlain) > availableLeft ? ` ${theme.bold}Whale Cal${theme.boldOff}` : left;
-  const spaces = Math.max(0, state.cols - width(shownLeft) - width(right));
-  return `${theme.topbarBg}${shownLeft}${" ".repeat(spaces)}${right}${theme.reset}`;
+  const spaces = Math.max(0, state.cols - width(shownLeft) - width(rightPlain));
+  return `${theme.topbarBg}${theme.text}${shownLeft}${" ".repeat(spaces)}${right}${theme.reset}`;
 }
 
 function renderSidebar(state: AppState, height: number, target: number): string[] {
@@ -275,8 +277,15 @@ function renderDeleteOverlay(state: AppState, rows: string[]): void {
   put(top + 4, `${theme.error}└${"─".repeat(boxWidth - 2)}┘`);
 }
 
+function renderPromptSeparator(state: AppState, borderColor: string): string {
+  if (!state.notice || state.cols < 4) return segment(`${borderColor}${"─".repeat(state.cols)}`, state.cols);
+  const text = truncate(state.notice.text, state.cols - 3);
+  const trailing = "─".repeat(Math.max(0, state.cols - width(text) - 3));
+  return segment(`${borderColor}─ ${noticeColor(state.notice.kind)}${text} ${borderColor}${trailing}`, state.cols);
+}
+
 function promptRendering(state: AppState): { line: string; cursor: { row: number; col: number } | null } {
-  const row = state.rows - 1;
+  const row = state.rows;
   if (!state.prompt) {
     const pending = state.pendingKeys ? ` ${theme.warning}${state.pendingKeys}` : "";
     return { line: segment(`${theme.vimNormal} N ${theme.text}❯${pending}`, state.cols), cursor: null };
@@ -297,7 +306,7 @@ export function render(state: AppState): void {
   state.rows = process.stdout.rows || state.rows || 24;
   const rows = Array.from({ length: state.rows }, () => segment("", state.cols));
   rows[0] = renderTopbar(state);
-  const footerTop = Math.max(4, state.rows - 3);
+  const footerTop = Math.max(3, state.rows - 1);
   const bodyTop = 2;
   const bodyHeight = Math.max(0, footerTop - bodyTop);
   const sidebarWidth = state.sidebarOpen && state.cols >= 76 ? Math.min(31, Math.floor(state.cols * 0.32)) : 0;
@@ -311,14 +320,8 @@ export function render(state: AppState): void {
 
   const prompt = promptRendering(state);
   const borderColor = state.focus === "calendar" ? theme.borderFocused : theme.borderUnfocused;
-  rows[state.rows - 3] = segment(`${borderColor}${"─".repeat(state.cols)}`, state.cols);
-  rows[state.rows - 2] = prompt.line;
-  rows[state.rows - 1] = segment(
-    state.notice
-      ? `${noticeColor(state.notice.kind)} ${truncate(state.notice.text, state.cols - 2)}`
-      : `${state.connected ? theme.success + " ● synced" : theme.error + " ○ offline"}`,
-    state.cols,
-  );
+  rows[state.rows - 2] = renderPromptSeparator(state, borderColor);
+  rows[state.rows - 1] = prompt.line;
 
   let overlayCursor: { row: number; col: number } | null = null;
   if (state.helpOpen) renderHelpOverlay(state, rows);
