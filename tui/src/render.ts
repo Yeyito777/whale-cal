@@ -218,25 +218,26 @@ function renderAgenda(state: AppState, widthValue: number, height: number): stri
 function renderEditorOverlay(state: AppState, rows: string[], editor: EditorState): { row: number; col: number } | null {
   const boxWidth = Math.max(44, Math.min(76, state.cols - 4));
   const valueWidth = boxWidth - 17;
-  const boxHeight = editor.fields.length + 3;
+  const boxHeight = editor.fields.length + 2;
   const top = Math.max(2, Math.floor((state.rows - boxHeight) / 2) + 1);
   const left = Math.max(1, Math.floor((state.cols - boxWidth) / 2) + 1);
   const put = (row: number, content: string) => putOverlayRow(rows, row, left, boxWidth, content);
-  const title = editor.kind === "create" ? " New event " : " Edit event ";
-  put(top - 1, `${theme.borderFocused}┌${center(`${theme.bold}${title}${theme.boldOff}`, boxWidth - 2)}┐`);
+  const title = ` ${editor.kind === "create" ? "New event" : "Edit event"} `;
+  const titleFill = Math.max(0, boxWidth - width(title) - 2);
+  const titleLeft = Math.floor(titleFill / 2);
+  put(top - 1, `${theme.borderFocused}┌${"─".repeat(titleLeft)}${theme.bold}${title}${theme.boldOff}${theme.borderFocused}${"─".repeat(titleFill - titleLeft)}┐`);
   let cursor: { row: number; col: number } | null = null;
   for (let index = 0; index < editor.fields.length; index++) {
     const item = editor.fields[index]!;
     const active = index === editor.active;
     const prefix = `│ ${pad(item.label, 10)} │ `;
     const value = truncate(item.value.replace(/\n/g, "↵"), valueWidth);
-    const body = `${prefix}${pad(value, valueWidth)} │`;
-    put(top + index, `${active ? theme.sidebarSelBg + theme.text : theme.appBg + theme.muted}${body}${theme.reset}${theme.borderFocused}`);
+    const fieldStyle = active ? theme.sidebarSelBg + theme.text : theme.appBg + theme.muted;
+    const body = `${theme.borderFocused}│${fieldStyle} ${pad(item.label, 10)} ${theme.borderFocused}│${fieldStyle} ${pad(value, valueWidth)} ${theme.borderFocused}│`;
+    put(top + index, body);
     if (active) cursor = { row: top + 1 + index, col: left + width(prefix) + Math.min(editor.cursor, valueWidth - 1) };
   }
-  put(top + editor.fields.length, `${theme.borderFocused}├${"─".repeat(boxWidth - 2)}┤`);
-  const mode = editor.mode === "insert" ? "-- INSERT --" : "-- NORMAL --";
-  put(top + 1 + editor.fields.length, `${theme.borderFocused}└${center(`${editor.mode === "insert" ? theme.vimInsert : theme.vimNormal}${mode}`, boxWidth - 2)}${theme.borderFocused}┘`);
+  put(top + editor.fields.length, `${theme.borderFocused}└${"─".repeat(boxWidth - 2)}┘`);
   return cursor;
 }
 
