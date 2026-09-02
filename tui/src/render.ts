@@ -215,6 +215,81 @@ function renderAgenda(state: AppState, widthValue: number, height: number): stri
   return rows;
 }
 
+function titledOverlayBorder(title: string, boxWidth: number): string {
+  const label = ` ${title} `;
+  const fill = Math.max(0, boxWidth - width(label) - 2);
+  const left = Math.floor(fill / 2);
+  return `${theme.borderFocused}┌${"─".repeat(left)}${theme.bold}${label}${theme.boldOff}${theme.borderFocused}${"─".repeat(fill - left)}┐`;
+}
+
+function framedOverlayRow(content: string, boxWidth: number, bg = theme.appBg): string {
+  return `${theme.borderFocused}│${segment(content, boxWidth - 2, bg)}${theme.borderFocused}│`;
+}
+
+function recurrenceLabel(occurrence: EventOccurrence): string | null {
+  const recurrence = occurrence.event.recurrence;
+  if (!recurrence) return null;
+  let label = recurrence.interval === 1 ? recurrence.frequency : `${recurrence.frequency} / ${recurrence.interval}`;
+  if (recurrence.until) label += ` until ${recurrence.until}`;
+  if (recurrence.count) label += ` · ${recurrence.count} times`;
+  return label;
+}
+
+function renderDayOverlay(state: AppState, rows: string[]): void {
+  const occurrences = eventsOnSelectedDate(state);
+  const selected = selectedOccurrence(state);
+  const boxWidth = Math.max(48, Math.min(86, state.cols - 4));
+  const inner = boxWidth - 2;
+  const detailRows: string[] = [];
+  if (selected) {
+    const event = selected.event;
+    const calendar = calendarFor(state, event.calendarId);
+    const dates = selected.startDate === selected.endDate ? selected.startDate : `${selected.startDate} — ${selected.endDate}`;
+    detailRows.push(` ${theme.bold}${truncate(event.title, inner - 2)}${theme.boldOff}`);
+    detailRows.push(` ${eventColor(calendar?.color ?? "#1d9bf0")}● ${theme.text}${truncate(calendar?.name ?? "Unknown calendar", inner - 4)}`);
+    detailRows.push(` ${theme.muted}${dates}  ${theme.text}${formatEventTime(event)}`);
+    if (event.location) detailRows.push(` ${theme.muted}@ ${theme.text}${truncate(event.location, inner - 4)}`);
+    const recurrence = recurrenceLabel(selected);
+    if (recurrence) detailRows.push(` ${theme.goal}↻ ${theme.text}${truncate(recurrence, inner - 4)}`);
+    if (event.notes) detailRows.push(` ${theme.muted}${truncate(event.notes.replace(/\s+/g, " "), inner - 2)}`);
+  }
+
+  const bodyHeight = Math.max(5, state.rows - 3);
+  const fixedRows = 4 + (selected ? detailRows.length + 1 : 0);
+  const listCapacity = Math.max(1, Math.min(Math.max(1, occurrences.length), bodyHeight - fixedRows));
+  const listStart = occurrences.length <= listCapacity
+    ? 0
+    : Math.max(0, Math.min(state.selectedEventIndex - Math.floor(listCapacity / 2), occurrences.length - listCapacity));
+  const visible = occurrences.slice(listStart, listStart + listCapacity);
+  const totalHeight = fixedRows + visible.length;
+  const top = 1 + Math.max(0, Math.floor((bodyHeight - totalHeight) / 2));
+  const left = Math.max(1, Math.floor((state.cols - boxWidth) / 2) + 1);
+  const put = (row: number, content: string) => putOverlayRow(rows, row, left, boxWidth, content);
+
+  let row = top;
+  put(row++, titledOverlayBorder(formatLongDate(state.selectedDate), boxWidth));
+  put(row++, framedOverlayRow(`${theme.text}${theme.bold} ${occurrences.length} event${occurrences.length === 1 ? "" : "s"}${theme.boldOff}`, boxWidth));
+  put(row++, `${theme.borderFocused}├${"─".repeat(boxWidth - 2)}┤`);
+  if (occurrences.length === 0) {
+    put(row++, framedOverlayRow(`${theme.muted} No events scheduled.`, boxWidth));
+  } else {
+    for (let index = 0; index < visible.length; index++) {
+      const occurrence = visible[index]!;
+      const absoluteIndex = listStart + index;
+      const active = absoluteIndex === state.selectedEventIndex;
+      const repeat = occurrence.event.recurrence ? "↻ " : "";
+      const titleWidth = Math.max(0, inner - 21 - width(repeat));
+      const content = `${active ? theme.text : theme.muted} ${active ? "▸" : " "} ${pad(formatEventTime(occurrence.event), 13)} ${eventColor(calendarFor(state, occurrence.event.calendarId)?.color ?? "#1d9bf0")}● ${theme.text}${repeat}${truncate(occurrence.event.title, titleWidth)}`;
+      put(row++, framedOverlayRow(content, boxWidth, active ? theme.sidebarSelBg : theme.appBg));
+    }
+  }
+  if (selected) {
+    put(row++, `${theme.borderFocused}├${"─".repeat(boxWidth - 2)}┤`);
+    for (const detail of detailRows) put(row++, framedOverlayRow(detail, boxWidth));
+  }
+  put(row, `${theme.borderFocused}└${"─".repeat(boxWidth - 2)}┘`);
+}
+
 function renderEditorOverlay(state: AppState, rows: string[], editor: EditorState): { row: number; col: number } | null {
   const boxWidth = Math.max(44, Math.min(76, state.cols - 4));
   const valueWidth = boxWidth - 17;
@@ -222,10 +297,7 @@ function renderEditorOverlay(state: AppState, rows: string[], editor: EditorStat
   const top = Math.max(2, Math.floor((state.rows - boxHeight) / 2) + 1);
   const left = Math.max(1, Math.floor((state.cols - boxWidth) / 2) + 1);
   const put = (row: number, content: string) => putOverlayRow(rows, row, left, boxWidth, content);
-  const title = ` ${editor.kind === "create" ? "New event" : "Edit event"} `;
-  const titleFill = Math.max(0, boxWidth - width(title) - 2);
-  const titleLeft = Math.floor(titleFill / 2);
-  put(top - 1, `${theme.borderFocused}┌${"─".repeat(titleLeft)}${theme.bold}${title}${theme.boldOff}${theme.borderFocused}${"─".repeat(titleFill - titleLeft)}┐`);
+  put(top - 1, titledOverlayBorder(editor.kind === "create" ? "New event" : "Edit event", boxWidth));
   let cursor: { row: number; col: number } | null = null;
   for (let index = 0; index < editor.fields.length; index++) {
     const item = editor.fields[index]!;
@@ -244,8 +316,9 @@ function renderEditorOverlay(state: AppState, rows: string[], editor: EditorStat
 function renderHelpOverlay(state: AppState, rows: string[]): void {
   const content = [
     ["h j k l", "move by day / week"], ["[  ]", "previous / next month"], ["t or gg", "today"],
-    ["n / a", "new event"], ["e / Enter", "edit selected event"], ["d", "delete selected event"],
-    ["J / K", "next / previous event"], ["v", "cycle view"], ["/", "open command prompt"],
+    ["Enter", "open selected day"], ["n / a", "new event"], ["e", "edit selected event"],
+    ["d", "delete selected event"], ["J / K", "next / previous event"], ["v", "cycle view"],
+    ["/", "open command prompt"],
     ["Ctrl+J/K", "cycle panel focus"], ["Ctrl+S", "toggle sidebar"], ["Ctrl+Shift+R", "restart cald"],
     ["q / Ctrl+C", "quit"],
   ];
@@ -325,6 +398,7 @@ export function render(state: AppState): void {
   rows[state.rows - 1] = prompt.line;
 
   let overlayCursor: { row: number; col: number } | null = null;
+  if (state.dayOpen) renderDayOverlay(state, rows);
   if (state.helpOpen) renderHelpOverlay(state, rows);
   if (state.confirmDelete) renderDeleteOverlay(state, rows);
   if (state.editor) overlayCursor = renderEditorOverlay(state, rows, state.editor);

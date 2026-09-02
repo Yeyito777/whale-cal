@@ -396,6 +396,34 @@ function moveSelectedEvent(amount: number): void {
   state.selectedEventIndex = (state.selectedEventIndex + amount + events.length) % events.length;
 }
 
+function handleDayKey(key: KeyEvent): void {
+  if (key.type === "escape") { state.dayOpen = false; return; }
+  if (key.type === "up") { moveSelectedEvent(-1); return; }
+  if (key.type === "down") { moveSelectedEvent(1); return; }
+  if (key.type === "left") { moveDate(state, -1); return; }
+  if (key.type === "right") { moveDate(state, 1); return; }
+  if (key.type === "enter") {
+    if (selectedOccurrence(state)) editSelected();
+    return;
+  }
+  if (key.type !== "char" || !key.char) return;
+  switch (key.char) {
+    case "j": case "J": moveSelectedEvent(1); return;
+    case "k": case "K": moveSelectedEvent(-1); return;
+    case "h": moveDate(state, -1); return;
+    case "l": moveDate(state, 1); return;
+    case "[": selectDate(state, addMonths(state.selectedDate, -1)); return;
+    case "]": selectDate(state, addMonths(state.selectedDate, 1)); return;
+    case "t": selectDate(state, todayKey()); return;
+    case "n": case "a": openNewEditor(); return;
+    case "e": if (selectedOccurrence(state)) editSelected(); return;
+    case "d": confirmDelete(); return;
+    case "/": case ":": state.prompt = { text: "/", cursor: 1, mode: "insert" }; return;
+    case "?": state.helpOpen = true; return;
+    case "q": state.dayOpen = false; return;
+  }
+}
+
 function handleNormalKey(key: KeyEvent): void {
   if (key.type === "ctrl-s") { state.sidebarOpen = !state.sidebarOpen; if (!state.sidebarOpen) state.focus = "calendar"; return; }
   if (key.type === "ctrl-j" || key.type === "ctrl-k") {
@@ -433,7 +461,8 @@ function handleNormalKey(key: KeyEvent): void {
     case "J": moveSelectedEvent(1); return;
     case "K": moveSelectedEvent(-1); return;
     case "n": case "a": openNewEditor(); return;
-    case "e": case "enter": editSelected(); return;
+    case "e": editSelected(); return;
+    case "enter": state.dayOpen = true; return;
     case "d": confirmDelete(); return;
     case "v": cycleView(); return;
     case "/": case ":": state.prompt = { text: "/", cursor: 1, mode: "insert" }; return;
@@ -461,12 +490,13 @@ function handleKey(key: KeyEvent): void {
     if (key.type === "escape" || (key.type === "char" && (key.char === "?" || key.char === "q"))) state.helpOpen = false;
   } else if (state.editor) handleEditorKey(key);
   else if (state.prompt) handlePromptKey(key);
+  else if (state.dayOpen) handleDayKey(key);
   else handleNormalKey(key);
   scheduleRender();
 }
 
 function handleMouse(event: MouseEvent): void {
-  if (state.editor || state.prompt || state.helpOpen || state.confirmDelete) return;
+  if (state.editor || state.prompt || state.helpOpen || state.confirmDelete || state.dayOpen) return;
   if (event.button === 64) { selectDate(state, addMonths(state.selectedDate, -1)); scheduleRender(); return; }
   if (event.button === 65) { selectDate(state, addMonths(state.selectedDate, 1)); scheduleRender(); return; }
   if (event.action !== "press" || event.button !== 0) return;

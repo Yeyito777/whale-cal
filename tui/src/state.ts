@@ -40,6 +40,7 @@ export interface AppState {
   prompt: PromptState | null;
   editor: EditorState | null;
   confirmDelete: CalendarEvent | null;
+  dayOpen: boolean;
   helpOpen: boolean;
   notice: Notice | null;
   remoteAlias: string | null;
@@ -58,7 +59,7 @@ export function createState(): AppState {
   return {
     database: emptyDatabase(), selectedDate: todayKey(), selectedEventIndex: 0, selectedCalendarIndex: 0,
     view: "month", focus: "calendar", sidebarOpen: false, prompt: null, editor: null, confirmDelete: null,
-    helpOpen: false, notice: { text: "Connecting to cald…", kind: "info", at: Date.now() }, remoteAlias: null,
+    dayOpen: false, helpOpen: false, notice: { text: "Connecting to cald…", kind: "info", at: Date.now() }, remoteAlias: null,
     connected: false, cols: process.stdout.columns || 100, rows: process.stdout.rows || 30, pendingKeys: "",
     layout: { sidebarWidth: 0, calendarRows: [], monthCells: [], mainLeft: 1, bodyTop: 2, bodyBottom: 20 },
   };

@@ -58,8 +58,9 @@ current GUI launchd domain when available and starts automatically at login.
 | `h j k l` | move one day / one week |
 | `[` / `]` | previous / next month |
 | `t` | today |
+| `Enter` | open the selected day and its event details |
 | `n` or `a` | new event form |
-| `e` / `Enter` | edit selected event, or create on an empty day |
+| `e` | edit selected event, or create on an empty day |
 | `d` | delete selected event (with confirmation) |
 | `J` / `K` | next / previous event on the selected day |
 | `v` | cycle month, week, and agenda views |
@@ -72,6 +73,10 @@ current GUI launchd domain when available and starts automatically at login.
 
 The calendar starts full-width with the optional sidebar closed. `Ctrl+S` opens
 the calendar filter and selected-day details, and that preference is remembered.
+
+Pressing `Enter` on the calendar opens a detailed day panel. Within that panel,
+`j`/`k` selects an event, `h`/`l` moves between days, and `Enter` or `e` edits
+that selected event. `Esc` returns to the calendar.
 
 The event form uses `Tab`/`Shift+Tab` (or `j`/`k` in normal mode) to move between
 fields, `i`/`a` to enter insert mode, `Esc` to return to normal mode, and
