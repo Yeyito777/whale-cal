@@ -1,0 +1,92 @@
+#!/usr/bin/env bash
+# caltest — launch an isolated worktree daemon and TUI, then clean up the daemon.
+#
+# Usage:
+#   caltest <worktree-name|path>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/worktree-common.sh"
+
+command -v bun >/dev/null 2>&1 || worktree_die "bun is required."
+[[ $# -eq 1 ]] || worktree_die "Usage: caltest <worktree-name|path>"
+
+WORKTREE_DIR="$(resolve_worktree_dir "$1")"
+[[ -d "$WORKTREE_DIR" ]] || worktree_die "Not found: $WORKTREE_DIR"
+[[ -f "$WORKTREE_DIR/package.json" ]] || worktree_die "No package.json in $WORKTREE_DIR"
+[[ -d "$WORKTREE_DIR/daemon" ]] || worktree_die "No daemon/ in $WORKTREE_DIR"
+[[ -d "$WORKTREE_DIR/tui" ]] || worktree_die "No tui/ in $WORKTREE_DIR"
+
+WT_NAME="$(basename "$WORKTREE_DIR")"
+
+printf '\n  caltest — %s\n  %s\n\n' "$WT_NAME" "$WORKTREE_DIR"
+
+# Always install: it is idempotent, repairs partial layouts, and handles branch
+# changes to package.json/bun.lock after the worktree was first created.
+sync_dependency_artifacts "$WORKTREE_DIR"
+(cd "$WORKTREE_DIR" && bun install --silent)
+
+sync_isolated_config "$WORKTREE_DIR"
+CAL_CONFIG_DIR="$(worktree_instance_config_dir "$WORKTREE_DIR")"
+export CAL_CONFIG_DIR
+
+RUNTIME_DIR="$CAL_CONFIG_DIR/runtime"
+PID_FILE="$RUNTIME_DIR/cald.pid"
+SUPERVISOR_LOG="$RUNTIME_DIR/caltest-supervisor.log"
+SOCKET="$(cd "$WORKTREE_DIR" && bun -e 'import { socketPath } from "./shared/src/paths"; process.stdout.write(socketPath())')"
+SUPERVISOR_PID=""
+OWNS_DAEMON=0
+
+cleanup() {
+  if [[ $OWNS_DAEMON -eq 1 && -n "$SUPERVISOR_PID" ]] && kill -0 "$SUPERVISOR_PID" 2>/dev/null; then
+    kill "$SUPERVISOR_PID" 2>/dev/null || true
+    wait "$SUPERVISOR_PID" 2>/dev/null || true
+  fi
+  if [[ $OWNS_DAEMON -eq 1 ]]; then
+    rm -f "$PID_FILE" "$SOCKET"
+  fi
+}
+trap cleanup EXIT
+
+daemon_ready() {
+  (cd "$WORKTREE_DIR" && bun run daemon/src/main.ts status >/dev/null 2>&1)
+}
+
+mkdir -p "$RUNTIME_DIR"
+chmod 700 "$CAL_CONFIG_DIR" "$RUNTIME_DIR" 2>/dev/null || true
+
+if daemon_ready; then
+  EXISTING_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
+  printf '  Daemon already running%s\n' "${EXISTING_PID:+ (pid $EXISTING_PID)}"
+else
+  if [[ -f "$PID_FILE" ]]; then
+    STALE_PID="$(cat "$PID_FILE" 2>/dev/null || true)"
+    if [[ "$STALE_PID" =~ ^[0-9]+$ ]] && kill -0 "$STALE_PID" 2>/dev/null; then
+      worktree_die "Daemon pid $STALE_PID is alive but not responding; stop it before retrying."
+    fi
+  fi
+
+  rm -f "$PID_FILE" "$SOCKET"
+  printf '  Starting isolated daemon (log: %s)\n' "$SUPERVISOR_LOG"
+  (cd "$WORKTREE_DIR" && exec bun run scripts/supervise-daemon.ts >>"$SUPERVISOR_LOG" 2>&1) &
+  SUPERVISOR_PID=$!
+  OWNS_DAEMON=1
+
+  ATTEMPT=0
+  while [[ $ATTEMPT -lt 50 ]]; do
+    if daemon_ready; then
+      break
+    fi
+    kill -0 "$SUPERVISOR_PID" 2>/dev/null || worktree_die "Daemon exited early; inspect $SUPERVISOR_LOG"
+    sleep 0.1
+    ATTEMPT=$((ATTEMPT + 1))
+  done
+  daemon_ready || worktree_die "Daemon did not become ready after 5 seconds; inspect $SUPERVISOR_LOG"
+  printf '  Daemon ready (supervisor pid %s)\n' "$SUPERVISOR_PID"
+fi
+
+printf '  Config: %s\n\n' "$CAL_CONFIG_DIR"
+
+(cd "$WORKTREE_DIR" && bun run tui)

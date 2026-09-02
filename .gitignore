@@ -4,6 +4,10 @@ dist/
 coverage/
 *.tsbuildinfo
 
+# Managed development worktrees and their isolated calendar instances
+.worktrees/
+config/worktrees/
+
 # User calendar data, preferences, sockets, PIDs, and logs
 config/data/*
 !config/data/.gitkeep

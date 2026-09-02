@@ -1,0 +1,15 @@
+#!/bin/sh
+# Bootstrap dependencies after a normal checkout or direct `git worktree add`.
+[ "${WHALE_CAL_SKIP_POST_CHECKOUT_INSTALL:-}" = "1" ] && exit 0
+
+[ -f package.json ] || exit 0
+[ -f bun.lock ] || [ -f bun.lockb ] || exit 0
+[ ! -d node_modules ] || exit 0
+
+if ! command -v bun >/dev/null 2>&1; then
+  printf '%s\n' 'whale-cal: bun is unavailable; skipping dependency install' >&2
+  exit 0
+fi
+
+bun install --silent
+exit 0

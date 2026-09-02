@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# create-worktree — create a Whale Cal worktree with dependencies and isolated config.
+#
+# Usage:
+#   create-worktree <name>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/worktree-common.sh"
+
+command -v bun >/dev/null 2>&1 || worktree_die "bun is required."
+
+NAME="${1:-}"
+[[ $# -eq 1 ]] || worktree_die "Usage: create-worktree <name>"
+validate_worktree_name "$NAME"
+
+WORKTREE_DIR="$WHALE_CAL_WORKTREES_DIR/$NAME"
+
+[[ ! -e "$WORKTREE_DIR" ]] || worktree_die "Already exists: $WORKTREE_DIR"
+if git -C "$WHALE_CAL_ROOT" show-ref --verify --quiet "refs/heads/$NAME"; then
+  worktree_die "Branch already exists: $NAME"
+fi
+
+ROLLBACK=1
+rollback_create() {
+  local status=$?
+  trap - EXIT
+  if [[ $status -ne 0 && $ROLLBACK -eq 1 ]]; then
+    printf '\n  Rolling back incomplete worktree creation...\n' >&2
+    git -C "$WHALE_CAL_ROOT" worktree remove --force "$WORKTREE_DIR" >/dev/null 2>&1 || true
+    git -C "$WHALE_CAL_ROOT" branch -D "$NAME" >/dev/null 2>&1 || true
+    cleanup_worktree_config "$WORKTREE_DIR"
+  fi
+  exit "$status"
+}
+trap rollback_create EXIT
+
+mkdir -p "$WHALE_CAL_WORKTREES_DIR"
+WHALE_CAL_SKIP_POST_CHECKOUT_INSTALL=1 \
+  git -C "$WHALE_CAL_ROOT" worktree add "$WORKTREE_DIR" -b "$NAME" HEAD
+
+sync_dependency_artifacts "$WORKTREE_DIR"
+sync_isolated_config "$WORKTREE_DIR"
+(cd "$WORKTREE_DIR" && bun install --silent)
+
+ROLLBACK=0
+trap - EXIT
+
+cat <<EOF
+
+  ✓ Created worktree
+  name:   $NAME
+  path:   $WORKTREE_DIR
+  branch: $NAME
+  config: $(worktree_instance_config_dir "$WORKTREE_DIR")
+
+EOF

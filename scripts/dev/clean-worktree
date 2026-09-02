@@ -1,0 +1,111 @@
+#!/usr/bin/env bash
+# clean-worktree — remove a Whale Cal worktree, its merged branch, and test config.
+#
+# Usage:
+#   clean-worktree <worktree-name|path>
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/worktree-common.sh"
+
+[[ $# -eq 1 ]] || worktree_die "Usage: clean-worktree <worktree-name|path>"
+
+INPUT="$1"
+WORKTREE_DIR="$(resolve_worktree_dir "$INPUT")"
+WT_NAME="$(basename "$WORKTREE_DIR")"
+INSTANCE_CONFIG="$(worktree_instance_config_dir "$WORKTREE_DIR")"
+BRANCH=""
+REGISTERED=0
+
+registered_worktree_branch() {
+  local worktree_dir="$1"
+  git -C "$WHALE_CAL_ROOT" worktree list --porcelain | awk -v target="$worktree_dir" '
+    $1 == "worktree" { in_target = ($2 == target); next }
+    in_target && $1 == "branch" {
+      sub(/^refs\/heads\//, "", $2)
+      print $2
+      exit
+    }
+  '
+}
+
+processes_using_worktree() {
+  local worktree_dir="$1"
+  local proc="" pid="" cwd="" command="" raw=""
+
+  if [[ -d /proc ]]; then
+    for proc in /proc/[0-9]*; do
+      [[ -d "$proc" ]] || continue
+      pid="${proc##*/}"
+      cwd="$(readlink "$proc/cwd" 2>/dev/null || true)"
+      if [[ "$cwd" == "$worktree_dir" || "$cwd" == "$worktree_dir"/* ]]; then
+        command="$(tr '\0' ' ' < "$proc/cmdline" 2>/dev/null || true)"
+        printf '    %s %s\n' "$pid" "${command:-?}"
+      fi
+    done
+  elif command -v lsof >/dev/null 2>&1 && [[ -d "$worktree_dir" ]]; then
+    raw="$(lsof -a -d cwd +D "$worktree_dir" -Fpc 2>/dev/null || true)"
+    printf '%s\n' "$raw" | awk '
+      /^p/ { pid = substr($0, 2); next }
+      /^c/ { command = substr($0, 2); if (pid != "") print "    " pid " " command }
+    '
+  fi
+}
+
+if git -C "$WHALE_CAL_ROOT" worktree list --porcelain | grep -Fqx "worktree $WORKTREE_DIR"; then
+  REGISTERED=1
+  BRANCH="$(registered_worktree_branch "$WORKTREE_DIR")"
+fi
+
+if [[ -n "$BRANCH" ]] && git -C "$WHALE_CAL_ROOT" show-ref --verify --quiet "refs/heads/$BRANCH" && \
+   ! git -C "$WHALE_CAL_ROOT" merge-base --is-ancestor "$BRANCH" HEAD; then
+  worktree_die "Branch $BRANCH contains work that is not merged into $(git -C "$WHALE_CAL_ROOT" branch --show-current). Merge it first, or remove the worktree and branch manually if you intend to discard it."
+fi
+
+if [[ -f "$INSTANCE_CONFIG/runtime/cald.pid" ]]; then
+  INSTANCE_PID="$(cat "$INSTANCE_CONFIG/runtime/cald.pid" 2>/dev/null || true)"
+  if [[ "$INSTANCE_PID" =~ ^[0-9]+$ ]] && kill -0 "$INSTANCE_PID" 2>/dev/null; then
+    worktree_die "The $WT_NAME test daemon is still running (pid $INSTANCE_PID). Exit caltest, then retry."
+  fi
+fi
+
+LIVE_PROCESSES="$(processes_using_worktree "$WORKTREE_DIR")"
+if [[ -n "$LIVE_PROCESSES" ]]; then
+  worktree_die "Worktree is still in use by running process(es):
+$LIVE_PROCESSES
+Close them, then rerun clean-worktree."
+fi
+
+if [[ $REGISTERED -eq 1 ]]; then
+  git -C "$WHALE_CAL_ROOT" worktree remove "$WORKTREE_DIR"
+fi
+
+MAIN_BRANCH="$(git -C "$WHALE_CAL_ROOT" branch --show-current 2>/dev/null || true)"
+if [[ -z "$BRANCH" && "$WT_NAME" != "$MAIN_BRANCH" ]] && \
+   git -C "$WHALE_CAL_ROOT" show-ref --verify --quiet "refs/heads/$WT_NAME"; then
+  BRANCH="$WT_NAME"
+fi
+
+if [[ -n "$BRANCH" ]] && git -C "$WHALE_CAL_ROOT" show-ref --verify --quiet "refs/heads/$BRANCH"; then
+  # Deliberately refuse to discard unmerged work. Use `git branch -D` manually
+  # only when losing the branch is intentional.
+  git -C "$WHALE_CAL_ROOT" branch -d "$BRANCH"
+fi
+
+cleanup_worktree_config "$WORKTREE_DIR"
+
+if [[ $REGISTERED -eq 0 || ! -e "$WORKTREE_DIR/.git" ]]; then
+  rmdir "$WORKTREE_DIR" 2>/dev/null || true
+fi
+
+cat <<EOF
+
+  ✓ Cleaned worktree
+  name:   $WT_NAME
+  path:   $WORKTREE_DIR
+  branch: ${BRANCH:-$WT_NAME}
+  config: $INSTANCE_CONFIG
+
+EOF

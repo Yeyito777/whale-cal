@@ -176,6 +176,25 @@ existing calendar data.
 bun run check
 ```
 
+### Isolated worktrees
+
+The development scripts create feature branches under `.worktrees/`, seed Bun's
+workspace dependencies, and keep test calendar data, sockets, PIDs, and logs away
+from the main calendar:
+
+```sh
+git config core.hooksPath .githooks   # once per clone
+./scripts/dev/create-worktree fix-agenda-scroll
+./scripts/dev/caltest fix-agenda-scroll
+./scripts/dev/clean-worktree fix-agenda-scroll
+```
+
+`caltest` starts the selected worktree's supervised daemon with an isolated,
+initially empty calendar under `config/worktrees/<name>/`, launches its TUI, and
+stops the daemon when the TUI exits. It copies only the main checkout's UI
+preferences. `clean-worktree` refuses to remove a dirty/in-use worktree or delete
+an unmerged branch.
+
 ## License
 
 [MIT](LICENSE)
