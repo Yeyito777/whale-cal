@@ -8,14 +8,14 @@ import { loadPreferences, savePreferences } from "./preferences";
 import { render } from "./render";
 import {
   createEditor, createState, cyclePanelFocus, editorDraft, eventsOnSelectedDate, exitPromptAndCycleFocus,
-  moveDate, selectDate, selectedCalendar, selectedOccurrence, setNotice, type AppState, type EditorState,
+  moveDate, selectDate, selectedCalendar, selectedOccurrence, setNotice, settleEditorSave, syncEditorDates, type AppState, type EditorState,
 } from "./state";
 import {
   cursorBar, disableKittyKeyboard, disableMouse, disablePaste, enableKittyKeyboard, enableMouse, enablePaste,
   enterAlt, hideCursor, leaveAlt, resetCursorColor, setCursorColor, showCursor,
 } from "./terminal";
 import { theme } from "./theme";
-import { nextGrapheme, previousGrapheme } from "./text";
+import { inputWindow, nextGrapheme, previousGrapheme, width } from "./text";
 
 const state = createState();
 loadPreferences(state);
@@ -70,8 +70,15 @@ function settle(reqId: string): void {
 function onClientEvent(event: ClientEvent): void {
   if (event.type === "route_status") {
     state.connected = event.state === "connected";
+    if (event.state === "failed" && state.editor?.saving) {
+      state.editor.saving = undefined;
+      state.editor.error = "Connection lost. Save status is unknown; check the day before retrying.";
+    }
     if (event.state === "connected") state.remoteAlias = event.mode === "remote" ? event.alias ?? null : null;
-    notice(event.message, event.state === "failed" ? "error" : event.state === "switching" ? "warning" : "success");
+    if (event.state === "connected") {
+      state.notice = null;
+      scheduleRender();
+    } else notice(event.message, event.state === "failed" ? "error" : "warning");
     return;
   }
   switch (event.type) {
@@ -83,15 +90,17 @@ function onClientEvent(event: ClientEvent): void {
       scheduleRender();
       return;
     case "event_created":
-      if (!applyRevision(event.revision)) return;
-      state.database.events.push(event.event);
+      if (applyRevision(event.revision)) state.database.events.push(event.event);
+      settleEditorSave(state, event.reqId, event.event);
       settle(event.reqId);
       scheduleRender();
       return;
     case "event_updated": {
-      if (!applyRevision(event.revision)) return;
-      const index = state.database.events.findIndex(item => item.id === event.event.id);
-      if (index === -1) state.database.events.push(event.event); else state.database.events[index] = event.event;
+      if (applyRevision(event.revision)) {
+        const index = state.database.events.findIndex(item => item.id === event.event.id);
+        if (index === -1) state.database.events.push(event.event); else state.database.events[index] = event.event;
+      }
+      settleEditorSave(state, event.reqId, event.event);
       settle(event.reqId);
       scheduleRender();
       return;
@@ -125,6 +134,10 @@ function onClientEvent(event: ClientEvent): void {
       return;
     case "error":
       if (event.reqId) pending.delete(event.reqId);
+      if (event.reqId && state.editor?.saving === event.reqId) {
+        state.editor.saving = undefined;
+        state.editor.error = event.message;
+      }
       notice(event.message, "error");
       return;
     case "pong": case "ack": case "daemon_shutdown": return;
@@ -169,8 +182,12 @@ function createEvent(draft: EventDraft): void {
 }
 
 function saveEditor(editor: EditorState): void {
+  if (editor.saving) return;
   try {
+    if (!client.connected) throw new Error("Offline. Your draft is kept here; reconnect before saving.");
     const draft = editorDraft(state, editor);
+    editor.error = undefined;
+    editor.saveDate = editor.originalDate === draft.startDate ? state.selectedDate : draft.startDate;
     if (editor.kind === "edit" && editor.eventId) {
       const patch: EventPatch = {
         ...draft,
@@ -181,11 +198,16 @@ function saveEditor(editor: EditorState): void {
         recurrence: draft.recurrence ?? null,
       };
       const reqId = client.updateEvent(editor.eventId, patch);
+      editor.saving = reqId;
       track(reqId, `Updated “${draft.title}”.`);
-    } else createEvent(draft);
-    selectDate(state, draft.startDate);
-    state.editor = null;
-  } catch (error) { notice(error instanceof Error ? error.message : String(error), "error"); }
+    } else {
+      editor.saving = client.createEvent(draft);
+      track(editor.saving, `Created “${draft.title}”.`);
+    }
+  } catch (error) {
+    editor.error = error instanceof Error ? error.message : String(error);
+    notice(editor.error, "error");
+  }
 }
 
 function cycleView(): void {
@@ -237,20 +259,33 @@ function execute(action: CommandAction): void {
 
 function insertText(editor: EditorState, text: string): void {
   const current = editor.fields[editor.active]!;
-  current.value = current.value.slice(0, editor.cursor) + text.replace(/[\r\n]+/g, " ") + current.value.slice(editor.cursor);
-  editor.cursor += text.replace(/[\r\n]+/g, " ").length;
+  const inserted = current.key === "notes" ? text.replace(/\r\n?/g, "\n") : text.replace(/[\r\n]+/g, " ");
+  current.value = current.value.slice(0, editor.cursor) + inserted + current.value.slice(editor.cursor);
+  editor.cursor += inserted.length;
 }
 
 function moveEditorField(editor: EditorState, amount: number): void {
-  editor.active = (editor.active + amount + editor.fields.length) % editor.fields.length;
-  editor.cursor = editor.fields[editor.active]!.value.length;
+  syncEditorDates(editor);
+  editor.active = (editor.active + amount + editor.fields.length + 2) % (editor.fields.length + 2);
+  editor.cursor = editor.fields[editor.active]?.value.length ?? 0;
 }
 
 function handleEditorKey(key: KeyEvent): void {
   const editor = state.editor!;
+  if (editor.saving) return;
   if (key.type === "ctrl-s") { saveEditor(editor); return; }
   if (key.type === "tab") { moveEditorField(editor, 1); return; }
   if (key.type === "backtab") { moveEditorField(editor, -1); return; }
+  if (editor.active >= editor.fields.length) {
+    if (key.type === "enter") {
+      if (editor.active === editor.fields.length) saveEditor(editor); else state.editor = null;
+    } else if (key.type === "escape") { editor.active = 0; editor.mode = "normal"; }
+    else if (key.type === "left" || key.char === "h" || key.char === "k") moveEditorField(editor, -1);
+    else if (key.type === "right" || key.char === "l" || key.char === "j") moveEditorField(editor, 1);
+    return;
+  }
+  if (key.type === "up") { moveEditorField(editor, -1); return; }
+  if (key.type === "down") { moveEditorField(editor, 1); return; }
   const current = () => editor.fields[editor.active]!;
   if (editor.mode === "insert") {
     if (key.type === "escape") { editor.mode = "normal"; editor.cursor = Math.max(0, Math.min(editor.cursor, current().value.length - 1)); return; }
@@ -394,9 +429,12 @@ function moveSelectedEvent(amount: number): void {
   const events = eventsOnSelectedDate(state);
   if (!events.length) return;
   state.selectedEventIndex = (state.selectedEventIndex + amount + events.length) % events.length;
+  state.detailScroll = 0;
 }
 
 function handleDayKey(key: KeyEvent): void {
+  if (key.type === "ctrl-d") { state.detailScroll += 5; return; }
+  if (key.type === "ctrl-u") { state.detailScroll = Math.max(0, state.detailScroll - 5); return; }
   if (key.type === "escape") { state.dayOpen = false; return; }
   if (key.type === "up") { moveSelectedEvent(-1); return; }
   if (key.type === "down") { moveSelectedEvent(1); return; }
@@ -425,6 +463,14 @@ function handleDayKey(key: KeyEvent): void {
 }
 
 function handleNormalKey(key: KeyEvent): void {
+  if (state.focus === "sidebar" && (key.type === "up" || key.type === "down")) {
+    state.selectedCalendarIndex = Math.max(0, Math.min(state.database.calendars.length - 1, state.selectedCalendarIndex + (key.type === "up" ? -1 : 1)));
+    return;
+  }
+  if (key.type === "left") { moveDate(state, -1); return; }
+  if (key.type === "right") { moveDate(state, 1); return; }
+  if (key.type === "up") { moveDate(state, -7); return; }
+  if (key.type === "down") { moveDate(state, 7); return; }
   if (key.type === "ctrl-s") { state.sidebarOpen = !state.sidebarOpen; if (!state.sidebarOpen) state.focus = "calendar"; return; }
   if (key.type === "ctrl-j" || key.type === "ctrl-k") {
     cyclePanelFocus(state);
@@ -496,18 +542,94 @@ function handleKey(key: KeyEvent): void {
 }
 
 function handleMouse(event: MouseEvent): void {
-  if (state.editor || state.prompt || state.helpOpen || state.confirmDelete || state.dayOpen) return;
+  if (state.prompt || state.helpOpen) return;
+  if (state.confirmDelete) {
+    if (event.action === "press" && event.button === 0) {
+      const hit = state.layout.actions.find(hit => hit.row === event.row && event.col >= hit.left && event.col <= hit.right);
+      if (hit?.action === "confirm-delete") handleKey({ type: "char", char: "y" });
+      if (hit?.action === "cancel-delete") handleKey({ type: "escape" });
+    }
+    return;
+  }
+  if (state.editor) {
+    if (state.editor.saving || event.action !== "press" || event.button !== 0) return;
+    const editor = state.editor;
+    const action = state.layout.actions.find(hit => hit.row === event.row && event.col >= hit.left && event.col <= hit.right);
+    if (action?.action === "save") { saveEditor(editor); scheduleRender(); return; }
+    if (action?.action === "cancel") { state.editor = null; scheduleRender(); return; }
+    const field = state.layout.editorFields.find(hit => hit.row === event.row && event.col >= hit.left && event.col <= hit.right);
+    if (field) {
+      syncEditorDates(editor);
+      const item = editor.fields[field.index]!;
+      const oldCursor = editor.active === field.index ? editor.cursor : 0;
+      const displayed = item.value.replace(/\n/g, "↵");
+      const window = inputWindow(displayed, oldCursor, field.right - field.left + 1);
+      let position = window.start;
+      const start = window.start;
+      while (position < item.value.length && width(displayed.slice(start, nextGrapheme(displayed, position))) <= event.col - field.left) position = nextGrapheme(displayed, position);
+      editor.active = field.index; editor.cursor = position;
+      scheduleRender();
+    }
+    return;
+  }
+  if (event.action === "press" && event.button === 0) {
+    const hit = state.layout.actions.find(hit => hit.row === event.row && event.col >= hit.left && event.col <= hit.right);
+    if (hit) {
+      switch (hit.action) {
+        case "new": openNewEditor(); break;
+        case "edit": if (selectedOccurrence(state)) editSelected(); break;
+        case "delete": confirmDelete(); break;
+        case "back": state.dayOpen = false; break;
+        case "day": state.dayOpen = true; break;
+        case "today": selectDate(state, todayKey()); break;
+        case "previous": case "next": {
+          const direction = hit.action === "previous" ? -1 : 1;
+          selectDate(state, state.dayOpen ? addDays(state.selectedDate, direction) : state.view === "month" ? addMonths(state.selectedDate, direction) : addDays(state.selectedDate, direction * 7));
+          break;
+        }
+        case "month": case "week": case "agenda": state.dayOpen = false; state.view = hit.action; break;
+      }
+      scheduleRender(); return;
+    }
+  }
+  if (state.dayOpen) {
+    if (event.button === 64 || event.button === 65) {
+      const list = state.layout.eventRows[0];
+      if (list && event.col >= list.left && event.col <= list.right && event.row <= (state.layout.eventRows.at(-1)?.row ?? 0)) moveSelectedEvent(event.button === 64 ? -1 : 1);
+      else state.detailScroll = Math.max(0, state.detailScroll + (event.button === 64 ? -3 : 3));
+    } else if (event.action === "press" && event.button === 0) {
+      const hit = state.layout.eventRows.find(hit => hit.row === event.row && event.col >= hit.left && event.col <= hit.right);
+      if (hit) { state.selectedEventIndex = hit.index; state.detailScroll = 0; }
+    }
+    scheduleRender(); return;
+  }
   if (event.button === 64) { selectDate(state, addMonths(state.selectedDate, -1)); scheduleRender(); return; }
   if (event.button === 65) { selectDate(state, addMonths(state.selectedDate, 1)); scheduleRender(); return; }
   if (event.action !== "press" || event.button !== 0) return;
+  const eventHit = state.layout.eventRows.find(hit => hit.row === event.row && event.col >= hit.left && event.col <= hit.right);
+  if (eventHit?.date) {
+    selectDate(state, eventHit.date);
+    state.selectedEventIndex = Math.max(0, eventsOnSelectedDate(state).findIndex(item => item.event.id === eventHit.eventId));
+    state.dayOpen = true; scheduleRender(); return;
+  }
   const calendarHit = state.layout.calendarRows.find(hit => hit.row === event.row && event.col <= state.layout.sidebarWidth);
   if (calendarHit) {
     const index = state.database.calendars.findIndex(calendar => calendar.id === calendarHit.calendarId);
-    if (index !== -1) { state.selectedCalendarIndex = index; state.focus = "sidebar"; }
+    if (index !== -1) {
+      state.selectedCalendarIndex = index; state.focus = "sidebar";
+      if (event.col <= 3) {
+        const calendar = state.database.calendars[index]!;
+        track(client.updateCalendar(calendar.id, { visible: !calendar.visible }), `${calendar.visible ? "Hid" : "Showed"} “${calendar.name}”.`);
+      }
+    }
     scheduleRender(); return;
   }
   const cell = state.layout.monthCells.find(hit => event.row >= hit.top && event.row <= hit.bottom && event.col >= hit.left && event.col <= hit.right);
-  if (cell) { selectDate(state, cell.date); state.focus = "calendar"; scheduleRender(); }
+  if (cell) {
+    if (cell.date === state.selectedDate) state.dayOpen = true;
+    else selectDate(state, cell.date);
+    state.focus = "calendar"; scheduleRender();
+  }
 }
 
 function setupTerminal(): void {

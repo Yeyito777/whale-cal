@@ -6,11 +6,11 @@ import type { Calendar, DateKey, EventOccurrence } from "@whale-cal/shared/types
 import { COMMANDS } from "./commands";
 import { cursorAt, flushFrame, overlayAt } from "./frame";
 import {
-  eventsOnSelectedDate, selectedCalendar, selectedOccurrence, type AppState, type EditorState, type Notice,
+  eventsOnSelectedDate, selectedCalendar, selectedOccurrence, type AppState, type EditorState, type Notice, visibleEvents,
 } from "./state";
 import { eventColor, theme } from "./theme";
 import { cursorBar, cursorBlock } from "./terminal";
-import { center, pad, truncate, width } from "./text";
+import { center, inputWindow, pad, truncate, width, wrapText } from "./text";
 
 function segment(content: string, target: number, bg = theme.appBg): string {
   const clipped = width(content) > target ? truncate(content, target) : content;
@@ -41,59 +41,47 @@ function eventLabel(state: AppState, occurrence: EventOccurrence, max: number): 
 }
 
 function renderTopbar(state: AppState): string {
-  const leftPlain = ` Whale Cal — ${formatMonthYear(state.selectedDate)}`;
-  const left = ` ${theme.bold}Whale Cal${theme.boldOff} — ${formatMonthYear(state.selectedDate)}`;
   const route = state.remoteAlias ? `SSH:${state.remoteAlias}` : "local";
   const status = state.connected ? "● synced" : "○ offline";
-  const rightPlain = `${status} — ${route} — ${state.view} `;
-  const right = `${state.connected ? theme.success : theme.error}${status}${theme.text} — ${route} — ${state.view} `;
-  const availableLeft = Math.max(0, state.cols - width(rightPlain));
-  const shownLeft = width(leftPlain) > availableLeft ? ` ${theme.bold}Whale Cal${theme.boldOff}` : left;
-  const spaces = Math.max(0, state.cols - width(shownLeft) - width(rightPlain));
-  return `${theme.topbarBg}${theme.text}${shownLeft}${" ".repeat(spaces)}${right}${theme.reset}`;
+  const title = ` ${theme.accent}${theme.bold}Whale Cal${theme.boldOff}${theme.muted} · ${formatMonthYear(state.selectedDate)}`;
+  const right = truncate(`${status} · ${route}`, Math.max(0, state.cols - width(title) - 3));
+  return segment(`${title}${" ".repeat(Math.max(1, state.cols - width(title) - width(right) - 1))}${theme.muted}${right} `, state.cols, theme.sidebarBg);
+}
+
+function renderToolbar(state: AppState): string {
+  let line = " ";
+  const action = (label: string, key: string, active = false) => {
+    const text = ` ${label} `;
+    const left = width(line) + 1;
+    if (left + width(text) > state.cols) return;
+    line += `${active ? theme.sidebarSelBg + theme.text : theme.appBg + theme.muted}${text}${theme.reset} `;
+    state.layout.actions.push({ action: key, left, right: left + width(text) - 1, row: 2 });
+  };
+  action("‹", "previous"); action("Today", "today"); action("›", "next");
+  for (const view of ["month", "week", "agenda"]) action(view[0]!.toUpperCase() + view.slice(1), view, !state.dayOpen && state.view === view);
+  if (state.dayOpen && state.cols >= 80) action("Day", "day", true);
+  action("+ Event", "new");
+  if (state.dayOpen) { action("Edit", "edit"); action("Delete", "delete"); action("Back", "back"); }
+  return segment(line, state.cols);
 }
 
 function renderSidebar(state: AppState, height: number, target: number): string[] {
-  const rows = Array.from({ length: height }, () => "");
   const inner = target - 1;
   const border = state.focus === "sidebar" ? theme.borderFocused : theme.borderUnfocused;
-  const put = (index: number, content: string, bg = theme.sidebarBg) => {
-    if (index < 0 || index >= height) return;
-    rows[index] = segment(content, inner, bg) + `${theme.appBg}${border}│${theme.reset}`;
+  const rows = Array.from({ length: height }, () => segment("", inner, theme.sidebarBg) + `${theme.appBg}${border}│${theme.reset}`);
+  const put = (row: number, content: string, active = false) => {
+    if (row < height) rows[row] = segment(content, inner, active ? theme.sidebarSelBg : theme.sidebarBg) + `${theme.appBg}${border}│${theme.reset}`;
   };
-  const header = state.remoteAlias ? ` Calendars — ${truncate(state.remoteAlias, 11)}` : " Calendars";
-  put(0, `${theme.text}${theme.bold}${header}${theme.boldOff}`);
-  put(1, `${border}${"─".repeat(inner - 1)}┤`);
-  state.layout.calendarRows = [];
-  let cursor = 2;
-  for (let index = 0; index < state.database.calendars.length && cursor < height; index++, cursor++) {
-    const calendar = state.database.calendars[index]!;
-    const selected = index === state.selectedCalendarIndex;
-    const icon = calendar.visible ? "●" : "○";
-    const text = `${selected && state.focus === "sidebar" ? "▸" : " "} ${eventColor(calendar.color)}${icon}${theme.reset} ${truncate(calendar.name, inner - 6)}`;
-    put(cursor, text, selected && state.focus === "sidebar" ? theme.sidebarSelBg : theme.sidebarBg);
-    state.layout.calendarRows.push({ calendarId: calendar.id, row: cursor + state.layout.bodyTop });
+  put(0, `${theme.text}${theme.bold} Calendars${theme.boldOff}`);
+  put(1, `${theme.muted} ${state.database.calendars.filter(calendar => calendar.visible).length} visible`);
+  const capacity = Math.max(1, height - 3);
+  const start = Math.max(0, Math.min(state.selectedCalendarIndex - Math.floor(capacity / 2), state.database.calendars.length - capacity));
+  for (let i = start; i < Math.min(state.database.calendars.length, start + capacity); i++) {
+    const calendar = state.database.calendars[i]!;
+    const selected = i === state.selectedCalendarIndex && state.focus === "sidebar";
+    put(3 + i - start, `${selected ? theme.accent + "▸" : " "} ${calendar.visible ? eventColor(calendar.color) + "●" : theme.muted + "○"} ${calendar.visible ? theme.text : theme.muted}${truncate(calendar.name, inner - 5)}`, selected);
+    if (3 + i - start < height) state.layout.calendarRows.push({ calendarId: calendar.id, row: state.layout.bodyTop + 3 + i - start });
   }
-  if (cursor < height) put(cursor++, `${theme.muted} ${state.database.events.length} event${state.database.events.length === 1 ? "" : "s"}`);
-  if (cursor < height) put(cursor++, `${theme.muted}${"─".repeat(Math.max(0, inner - 2))}`);
-  if (cursor < height) put(cursor++, `${theme.bold} ${truncate(formatShortDate(state.selectedDate), inner - 2)}${theme.boldOff}`);
-
-  const selected = eventsOnSelectedDate(state);
-  if (selected.length === 0 && cursor < height) put(cursor++, `${theme.muted}  No events`);
-  for (let index = 0; index < selected.length && cursor < height; index++, cursor++) {
-    const pointer = index === state.selectedEventIndex ? "▸" : " ";
-    const occurrence = selected[index]!;
-    put(cursor, `${pointer} ${eventLabel(state, occurrence, inner - 2)}`, index === state.selectedEventIndex ? theme.sidebarSelBg : theme.sidebarBg);
-  }
-  const active = selectedOccurrence(state);
-  if (active && cursor + 1 < height) {
-    put(cursor++, `${theme.muted}${"─".repeat(Math.max(0, inner - 2))}`);
-    put(cursor++, `${theme.command} ${truncate(formatEventTime(active.event), inner - 2)}`);
-    if (active.event.location && cursor < height) put(cursor++, `${theme.muted} @ ${truncate(active.event.location, inner - 4)}`);
-    if (active.event.recurrence && cursor < height) put(cursor++, `${theme.goal} ↻ ${active.event.recurrence.frequency}`);
-    if (active.event.notes && cursor < height) put(cursor++, `${theme.muted} ${truncate(active.event.notes.replace(/\s+/g, " "), inner - 2)}`);
-  }
-  while (cursor < height) put(cursor++, "");
   return rows;
 }
 
@@ -109,51 +97,44 @@ function selectedCellContent(content: string, target: number, selected: boolean)
 
 function renderMonth(state: AppState, widthValue: number, height: number, absoluteLeft: number): string[] {
   const rows = Array.from({ length: height }, () => segment("", widthValue));
-  if (height <= 0 || widthValue <= 0) return rows;
-  rows[0] = segment(`${theme.bold} ${formatMonthYear(state.selectedDate)}${theme.boldOff}  ${theme.muted}${formatLongDate(state.selectedDate)}`, widthValue);
-  if (height === 1) return rows;
+  if (height < 2) return rows;
   const widths = columnWidths(widthValue);
-  rows[1] = weekdayLabels(1).map((label, index) => segment(`${theme.muted}${center(label, widths[index]!)}`, widths[index]!)).join(`${theme.appBg}${theme.borderUnfocused}│${theme.reset}`);
-  const matrix = monthMatrix(state.selectedDate, 1);
-  const selectedMonth = state.selectedDate.slice(0, 7);
+  const join = `${theme.appBg}${theme.borderUnfocused}│${theme.reset}`;
+  rows[0] = weekdayLabels(1).map((label, i) => segment(`${theme.muted}${center(label, widths[i]!)}`, widths[i]!)).join(join);
+  const matrix = monthMatrix(state.selectedDate, 1).filter(week => week.some(day => day.slice(0, 7) === state.selectedDate.slice(0, 7)));
+  const available = height - 1;
+  const separators = available >= matrix.length * 2;
+  const cellHeight = available - (separators ? matrix.length - 1 : 0);
+  const occurrences = occurrencesForRange(visibleEvents(state), matrix[0]![0]!, matrix.at(-1)![6]!);
   const today = todayKey();
-  const bodyHeight = Math.max(0, height - 2);
-  const baseHeight = Math.floor(bodyHeight / 6), remainder = bodyHeight % 6;
-  state.layout.monthCells = [];
-  let outputRow = 2;
-  for (let week = 0; week < 6; week++) {
-    const weekHeight = baseHeight + (week < remainder ? 1 : 0);
+  let row = 1;
+  for (let week = 0; week < matrix.length; week++) {
+    const weekHeight = Math.floor(cellHeight / matrix.length) + (week < cellHeight % matrix.length ? 1 : 0);
     const dates = matrix[week]!;
-    for (let line = 0; line < weekHeight; line++, outputRow++) {
-      let left = absoluteLeft;
-      const cells: string[] = [];
-      for (let day = 0; day < 7; day++) {
-        const key = dates[day]!, cellWidth = widths[day]!;
-        const isSelected = key === state.selectedDate;
-        if (line === 0) {
-          let dateText = String(Number(key.slice(8)));
-          if (key === today) dateText = `${theme.accent}${theme.bold}${dateText}${theme.boldOff}`;
-          else if (!key.startsWith(selectedMonth)) dateText = `${theme.muted}${dateText}`;
-          cells.push(selectedCellContent(` ${dateText}`, cellWidth, isSelected));
-          state.layout.monthCells.push({
-            date: key, left, right: left + cellWidth - 1,
-            top: state.layout.bodyTop + outputRow, bottom: state.layout.bodyTop + outputRow + Math.max(0, weekHeight - 1),
-          });
-        } else {
-          const occurrences = occurrencesForRange(
-            state.database.events.filter(event => state.database.calendars.find(calendar => calendar.id === event.calendarId)?.visible), key, key,
-          );
-          const occurrence = occurrences[line - 1];
-          const more = line === weekHeight - 1 && occurrences.length > line;
-          const content = more
-            ? `${theme.muted} +${occurrences.length - line + 1} more`
-            : occurrence ? ` ${eventLabel(state, occurrence, cellWidth - 1)}` : "";
-          cells.push(selectedCellContent(content, cellWidth, isSelected));
-        }
-        left += cellWidth + 1;
-      }
-      if (outputRow < rows.length) rows[outputRow] = cells.join(`${theme.appBg}${theme.borderUnfocused}│${theme.reset}`);
+    const perDay = dates.map(date => occurrences.filter(event => event.startDate <= date && event.endDate >= date));
+    let left = absoluteLeft;
+    for (let day = 0; day < 7; day++) {
+      if (weekHeight) state.layout.monthCells.push({ date: dates[day]!, left, right: left + widths[day]! - 1,
+        top: state.layout.bodyTop + row, bottom: state.layout.bodyTop + row + weekHeight - 1 });
+      left += widths[day]! + 1;
     }
+    for (let line = 0; line < weekHeight; line++, row++) {
+      rows[row] = dates.map((date, day) => {
+        const size = widths[day]!;
+        const events = perDay[day]!;
+        let content = "";
+        if (line === 0) {
+          const color = date === today ? theme.accent + theme.bold : date === state.selectedDate ? theme.text + theme.bold
+            : date.slice(0, 7) === state.selectedDate.slice(0, 7) ? theme.text : theme.muted;
+          const count = weekHeight === 1 && events.length ? ` · ${events.length}` : "";
+          content = `${color} ${Number(date.slice(8))}${date === today && size >= 14 ? " Today" : ""}${count}${theme.boldOff}`;
+        } else if (line === weekHeight - 1 && events.length > weekHeight - 1) {
+          content = `${theme.muted} +${events.length - line + 1} more`;
+        } else if (events[line - 1]) content = ` ${eventLabel(state, events[line - 1]!, size - 1)}`;
+        return selectedCellContent(content, size, date === state.selectedDate);
+      }).join(join);
+    }
+    if (separators && week < matrix.length - 1) rows[row++] = `${theme.appBg}${theme.borderUnfocused}${widths.map(size => "─".repeat(size)).join("┼")}${theme.reset}`;
   }
   return rows;
 }
@@ -208,15 +189,16 @@ function renderAgenda(state: AppState, widthValue: number, height: number): stri
       && eventsOnSelectedDate(state)[state.selectedEventIndex]?.id === occurrence.id;
     const time = formatEventTime(occurrence.event).padEnd(13);
     const calendar = calendarFor(state, occurrence.event.calendarId);
+    state.layout.eventRows.push({ index: 0, date: occurrence.startDate, eventId: occurrence.event.id, row: state.layout.bodyTop + row, left: state.layout.mainLeft, right: state.cols });
     rows[row++] = segment(`${isSelected ? " ▸" : "  "} ${theme.muted}${time} ${eventColor(calendar?.color ?? "#1d9bf0")}● ${theme.text}${occurrence.event.title}`, widthValue, isSelected ? theme.sidebarSelBg : theme.appBg);
     if (occurrence.event.location && row < height) rows[row++] = segment(`${theme.muted}                  @ ${occurrence.event.location}`, widthValue);
   }
-  if (occurrences.length === 0 && height > 2) rows[2] = segment(`${theme.muted} No upcoming events. Press n to create one.`, widthValue);
+  if (occurrences.length === 0 && height > 2) rows[2] = segment(`${theme.muted} No upcoming events.`, widthValue);
   return rows;
 }
 
 function titledOverlayBorder(title: string, boxWidth: number): string {
-  const label = ` ${title} `;
+  const label = ` ${truncate(title, boxWidth - 4)} `;
   const fill = Math.max(0, boxWidth - width(label) - 2);
   const left = Math.floor(fill / 2);
   return `${theme.borderFocused}┌${"─".repeat(left)}${theme.bold}${label}${theme.boldOff}${theme.borderFocused}${"─".repeat(fill - left)}┐`;
@@ -236,80 +218,96 @@ function recurrenceLabel(occurrence: EventOccurrence): string | null {
 }
 
 function renderDayOverlay(state: AppState, rows: string[]): void {
+  state.layout.eventRows = [];
   const occurrences = eventsOnSelectedDate(state);
   const selected = selectedOccurrence(state);
-  const boxWidth = Math.max(48, Math.min(86, state.cols - 4));
-  const inner = boxWidth - 2;
-  const detailRows: string[] = [];
+  const left = state.layout.mainLeft;
+  const totalWidth = state.cols - left + 1;
+  const top = state.layout.bodyTop - 1;
+  const height = state.layout.bodyBottom - state.layout.bodyTop + 1;
+  const split = totalWidth >= 96;
+  const listWidth = split ? Math.floor(totalWidth * 0.46) : totalWidth;
+  const listHeight = split ? height : Math.min(Math.max(4, Math.floor(height * 0.42)), height);
+  const detailWidth = split ? totalWidth - listWidth - 1 : totalWidth;
+  const detailHeight = split ? height : height - listHeight - 1;
+  for (let row = 0; row < height; row++) putOverlayRow(rows, top + row, left, totalWidth, "");
+  const putList = (row: number, content: string, active = false) => {
+    if (row < listHeight) putOverlayRow(rows, top + row, left, listWidth, segment(content, listWidth, active ? theme.sidebarSelBg : theme.appBg));
+  };
+  putList(0, `${theme.text}${theme.bold} ${formatLongDate(state.selectedDate)}${theme.boldOff}`);
+  const capacity = Math.max(1, listHeight - 3);
+  const start = Math.max(0, Math.min(state.selectedEventIndex - Math.floor(capacity / 2), occurrences.length - capacity));
+  const range = occurrences.length > capacity ? ` · ${start + 1}–${Math.min(occurrences.length, start + capacity)} of ${occurrences.length}` : "";
+  putList(1, `${theme.muted} ${occurrences.length} event${occurrences.length === 1 ? "" : "s"}${range}`);
+  if (!occurrences.length) putList(3, `${theme.muted} Nothing scheduled. A little breathing room.`);
+  for (let i = start; i < Math.min(occurrences.length, start + capacity); i++) {
+    const occurrence = occurrences[i]!;
+    const active = i === state.selectedEventIndex;
+    const calendar = calendarFor(state, occurrence.event.calendarId);
+    const time = formatEventTime(occurrence.event);
+    const title = truncate(occurrence.event.title, listWidth - 21);
+    const content = `${active ? theme.accent : theme.muted} ${active ? "▸" : " "} ${theme.muted}${pad(time, 13)} ${eventColor(calendar?.color ?? "#1d9bf0")}● ${theme.text}${title}`;
+    const row = 3 + i - start;
+    putList(row, content, active);
+    state.layout.eventRows.push({ index: i, left, right: left + listWidth - 1, row: top + row + 1 });
+  }
+  if (split) {
+    for (let row = 0; row < height; row++) putOverlayRow(rows, top + row, left + listWidth, 1, `${theme.borderUnfocused}│`);
+  } else if (listHeight < height) putOverlayRow(rows, top + listHeight, left, totalWidth, `${theme.borderUnfocused}${"─".repeat(totalWidth)}`);
+  const details: string[] = [];
+  const add = (text: string, color = theme.text) => details.push(...wrapText(text, detailWidth - 4).map(line => `  ${color}${line}`));
   if (selected) {
     const event = selected.event;
     const calendar = calendarFor(state, event.calendarId);
-    const dates = selected.startDate === selected.endDate ? selected.startDate : `${selected.startDate} — ${selected.endDate}`;
-    detailRows.push(` ${theme.bold}${truncate(event.title, inner - 2)}${theme.boldOff}`);
-    detailRows.push(` ${eventColor(calendar?.color ?? "#1d9bf0")}● ${theme.text}${truncate(calendar?.name ?? "Unknown calendar", inner - 4)}`);
-    detailRows.push(` ${theme.muted}${dates}  ${theme.text}${formatEventTime(event)}`);
-    if (event.location) detailRows.push(` ${theme.muted}@ ${theme.text}${truncate(event.location, inner - 4)}`);
+    add(event.title, theme.bold + theme.text);
+    details.push(theme.boldOff);
+    add(`${formatEventTime(event)}  ·  ${selected.startDate === selected.endDate ? selected.startDate : selected.startDate + " — " + selected.endDate}`);
+    add(`● ${calendar?.name ?? "Unknown calendar"}`, eventColor(calendar?.color ?? "#1d9bf0"));
+    if (event.location) { details.push(""); add("Location", theme.muted); add(event.location); }
     const recurrence = recurrenceLabel(selected);
-    if (recurrence) detailRows.push(` ${theme.goal}↻ ${theme.text}${truncate(recurrence, inner - 4)}`);
-    if (event.notes) detailRows.push(` ${theme.muted}${truncate(event.notes.replace(/\s+/g, " "), inner - 2)}`);
-  }
-
-  const bodyHeight = Math.max(5, state.rows - 3);
-  const fixedRows = 4 + (selected ? detailRows.length + 1 : 0);
-  const listCapacity = Math.max(1, Math.min(Math.max(1, occurrences.length), bodyHeight - fixedRows));
-  const listStart = occurrences.length <= listCapacity
-    ? 0
-    : Math.max(0, Math.min(state.selectedEventIndex - Math.floor(listCapacity / 2), occurrences.length - listCapacity));
-  const visible = occurrences.slice(listStart, listStart + listCapacity);
-  const totalHeight = fixedRows + visible.length;
-  const top = 1 + Math.max(0, Math.floor((bodyHeight - totalHeight) / 2));
-  const left = Math.max(1, Math.floor((state.cols - boxWidth) / 2) + 1);
-  const put = (row: number, content: string) => putOverlayRow(rows, row, left, boxWidth, content);
-
-  let row = top;
-  put(row++, titledOverlayBorder(formatLongDate(state.selectedDate), boxWidth));
-  put(row++, framedOverlayRow(`${theme.text}${theme.bold} ${occurrences.length} event${occurrences.length === 1 ? "" : "s"}${theme.boldOff}`, boxWidth));
-  put(row++, `${theme.borderFocused}├${"─".repeat(boxWidth - 2)}┤`);
-  if (occurrences.length === 0) {
-    put(row++, framedOverlayRow(`${theme.muted} No events scheduled.`, boxWidth));
-  } else {
-    for (let index = 0; index < visible.length; index++) {
-      const occurrence = visible[index]!;
-      const absoluteIndex = listStart + index;
-      const active = absoluteIndex === state.selectedEventIndex;
-      const repeat = occurrence.event.recurrence ? "↻ " : "";
-      const titleWidth = Math.max(0, inner - 21 - width(repeat));
-      const content = `${active ? theme.text : theme.muted} ${active ? "▸" : " "} ${pad(formatEventTime(occurrence.event), 13)} ${eventColor(calendarFor(state, occurrence.event.calendarId)?.color ?? "#1d9bf0")}● ${theme.text}${repeat}${truncate(occurrence.event.title, titleWidth)}`;
-      put(row++, framedOverlayRow(content, boxWidth, active ? theme.sidebarSelBg : theme.appBg));
-    }
-  }
-  if (selected) {
-    put(row++, `${theme.borderFocused}├${"─".repeat(boxWidth - 2)}┤`);
-    for (const detail of detailRows) put(row++, framedOverlayRow(detail, boxWidth));
-  }
-  put(row, `${theme.borderFocused}└${"─".repeat(boxWidth - 2)}┘`);
+    if (recurrence) { details.push(""); add("Repeats", theme.muted); add(recurrence); }
+    if (event.notes) { details.push(""); add("Notes", theme.muted); add(event.notes); }
+  } else { add("Your day is open", theme.bold + theme.text); details.push(theme.boldOff); add("Add an event when you’re ready.", theme.muted); }
+  const contentHeight = Math.max(0, detailHeight - 1);
+  state.detailScroll = Math.max(0, Math.min(state.detailScroll, details.length - contentHeight));
+  const detailTop = split ? top : top + listHeight + 1;
+  const detailLeft = split ? left + listWidth + 1 : left;
+  for (let i = 0; i < contentHeight; i++) putOverlayRow(rows, detailTop + i, detailLeft, detailWidth, details[state.detailScroll + i] ?? "");
+  if (details.length > contentHeight && detailHeight > 0) putOverlayRow(rows, detailTop + detailHeight - 1, detailLeft, detailWidth,
+    `${theme.muted}  ${state.detailScroll + 1}–${Math.min(details.length, state.detailScroll + contentHeight)} / ${details.length}`);
 }
 
 function renderEditorOverlay(state: AppState, rows: string[], editor: EditorState): { row: number; col: number } | null {
-  const boxWidth = Math.max(44, Math.min(76, state.cols - 4));
+  const boxWidth = Math.min(82, state.cols - 6);
   const valueWidth = boxWidth - 17;
-  const boxHeight = editor.fields.length + 2;
-  const top = Math.max(2, Math.floor((state.rows - boxHeight) / 2) + 1);
+  const boxHeight = editor.fields.length + 4;
+  const top = Math.max(2, Math.floor((state.rows - boxHeight) / 2));
   const left = Math.max(1, Math.floor((state.cols - boxWidth) / 2) + 1);
   const put = (row: number, content: string) => putOverlayRow(rows, row, left, boxWidth, content);
-  put(top - 1, titledOverlayBorder(editor.kind === "create" ? "New event" : "Edit event", boxWidth));
+  put(top, titledOverlayBorder(editor.kind === "create" ? "New event" : "Edit event", boxWidth));
   let cursor: { row: number; col: number } | null = null;
   for (let index = 0; index < editor.fields.length; index++) {
     const item = editor.fields[index]!;
     const active = index === editor.active;
-    const prefix = `│ ${pad(item.label, 10)} │ `;
-    const value = truncate(item.value.replace(/\n/g, "↵"), valueWidth);
-    const fieldStyle = active ? theme.sidebarSelBg + theme.text : theme.appBg + theme.muted;
-    const body = `${theme.borderFocused}│${fieldStyle} ${pad(item.label, 10)} ${theme.borderFocused}│${fieldStyle} ${pad(value, valueWidth)} ${theme.borderFocused}│`;
-    put(top + index, body);
-    if (active) cursor = { row: top + 1 + index, col: left + width(prefix) + Math.min(editor.cursor, valueWidth - 1) };
+    const window = inputWindow(item.value.replace(/\n/g, "↵"), active ? editor.cursor : 0, valueWidth);
+    const placeholder = item.key === "startTime" ? "All day" : item.key === "endTime" ? "HH:MM" : item.key === "title" ? "Event title" : "Optional";
+    const display = item.value ? pad(window.text, valueWidth) : `${theme.muted}${pad(placeholder, valueWidth)}`;
+    const fieldStyle = active ? theme.sidebarSelBg + theme.text : theme.appBg + theme.text;
+    put(top + 1 + index, `${theme.borderFocused}│${fieldStyle} ${theme.muted}${pad(item.label, 10)} ${theme.borderFocused}│${fieldStyle} ${display} ${theme.appBg}${theme.borderFocused}│`);
+    state.layout.editorFields.push({ index, left: left + 15, right: left + boxWidth - 3, row: top + 2 + index });
+    if (active && !editor.saving) cursor = { row: top + 2 + index, col: left + 15 + window.column };
   }
-  put(top + editor.fields.length, `${theme.borderFocused}└${"─".repeat(boxWidth - 2)}┘`);
+  const errorRow = top + editor.fields.length + 1;
+  put(errorRow, framedOverlayRow(`${theme.error} ${truncate(editor.error ?? "", boxWidth - 4)}`, boxWidth));
+  let actions = " ";
+  for (const [index, label] of [editor.saving ? "Saving…" : "Save", "Cancel"].entries()) {
+    const text = ` ${label} `;
+    const actionLeft = left + 1 + width(actions);
+    actions += `${editor.active === editor.fields.length + index ? theme.sidebarSelBg : theme.appBg}${index === 0 ? theme.accent + theme.bold : theme.muted}${text}${theme.reset}  `;
+    state.layout.actions.push({ action: index === 0 ? "save" : "cancel", left: actionLeft, right: actionLeft + width(text) - 1, row: errorRow + 2 });
+  }
+  put(errorRow + 1, framedOverlayRow(actions, boxWidth));
+  put(errorRow + 2, `${theme.borderFocused}└${"─".repeat(boxWidth - 2)}┘`);
   return cursor;
 }
 
@@ -344,10 +342,14 @@ function renderDeleteOverlay(state: AppState, rows: string[]): void {
   const boxWidth = Math.max(42, Math.min(68, state.cols - 4)), top = Math.floor(state.rows / 2) - 2;
   const left = Math.floor((state.cols - boxWidth) / 2) + 1;
   const put = (row: number, content: string) => putOverlayRow(rows, row, left, boxWidth, content);
-  put(top, `${theme.error}┌${center(" Delete event? ", boxWidth - 2)}┐`);
+  put(top, titledOverlayBorder("Delete event?", boxWidth));
   put(top + 1, `${theme.error}│${theme.text}${center(truncate(event.title, boxWidth - 6), boxWidth - 2)}${theme.error}│`);
   put(top + 2, `${theme.error}│${theme.muted}${center(event.recurrence ? "This deletes the entire recurring series." : formatLongDate(event.startDate), boxWidth - 2)}${theme.error}│`);
-  put(top + 3, `${theme.error}│${center(`${theme.warning}y${theme.text} delete    ${theme.command}n${theme.text} cancel`, boxWidth - 2)}${theme.error}│`);
+  const buttons = " Delete    Cancel ";
+  const buttonLeft = left + 1 + Math.floor((boxWidth - 2 - width(buttons)) / 2);
+  put(top + 3, `${theme.error}│${center(`${theme.error} Delete    ${theme.text}Cancel `, boxWidth - 2)}${theme.error}│`);
+  state.layout.actions.push({ action: "confirm-delete", row: top + 4, left: buttonLeft, right: buttonLeft + 7 });
+  state.layout.actions.push({ action: "cancel-delete", row: top + 4, left: buttonLeft + 10, right: buttonLeft + 16 });
   put(top + 4, `${theme.error}└${"─".repeat(boxWidth - 2)}┘`);
 }
 
@@ -375,17 +377,21 @@ function promptRendering(state: AppState): { line: string; cursor: { row: number
   };
 }
 
-export function render(state: AppState): void {
-  state.cols = process.stdout.columns || state.cols || 80;
-  state.rows = process.stdout.rows || state.rows || 24;
+export function buildFrame(state: AppState): { rows: string[]; cursor: string } {
   const rows = Array.from({ length: state.rows }, () => segment("", state.cols));
+  if (state.cols < 54 || state.rows < 18) {
+    rows[Math.floor(state.rows / 2)] = segment(`${theme.muted}${truncate("Resize terminal to at least 54 × 18", state.cols)}`, state.cols);
+    state.layout.actions = []; state.layout.eventRows = []; state.layout.editorFields = []; state.layout.monthCells = []; state.layout.calendarRows = [];
+    return { rows, cursor: cursorAt(1, 1, cursorBlock, false) };
+  }
   rows[0] = renderTopbar(state);
   const footerTop = Math.max(3, state.rows - 1);
-  const bodyTop = 2;
+  const bodyTop = 3;
   const bodyHeight = Math.max(0, footerTop - bodyTop);
   const sidebarWidth = state.sidebarOpen && state.cols >= 76 ? Math.min(31, Math.floor(state.cols * 0.32)) : 0;
   const mainWidth = state.cols - sidebarWidth;
-  state.layout = { sidebarWidth, calendarRows: [], monthCells: [], mainLeft: sidebarWidth + 1, bodyTop, bodyBottom: footerTop - 1 };
+  state.layout = { sidebarWidth, calendarRows: [], monthCells: [], mainLeft: sidebarWidth + 1, bodyTop, bodyBottom: footerTop - 1, actions: [], eventRows: [], editorFields: [] };
+  rows[1] = renderToolbar(state);
   const sidebar = sidebarWidth ? renderSidebar(state, bodyHeight, sidebarWidth) : [];
   const main = state.view === "month" ? renderMonth(state, mainWidth, bodyHeight, sidebarWidth + 1)
     : state.view === "week" ? renderWeek(state, mainWidth, bodyHeight, sidebarWidth + 1)
@@ -399,6 +405,9 @@ export function render(state: AppState): void {
 
   let overlayCursor: { row: number; col: number } | null = null;
   if (state.dayOpen) renderDayOverlay(state, rows);
+  if (state.editor || state.helpOpen || state.confirmDelete) {
+    for (let i = bodyTop - 1; i < footerTop - 1; i++) rows[i] = `${theme.muted}${rows[i]!.replace(/\x1b\[[0-9;]*m/g, theme.appBg + theme.muted)}${theme.reset}`;
+  }
   if (state.helpOpen) renderHelpOverlay(state, rows);
   if (state.confirmDelete) renderDeleteOverlay(state, rows);
   if (state.editor) overlayCursor = renderEditorOverlay(state, rows, state.editor);
@@ -406,5 +415,11 @@ export function render(state: AppState): void {
     ? cursorAt(overlayCursor.row, overlayCursor.col, state.editor?.mode === "insert" ? cursorBar : cursorBlock)
     : prompt.cursor ? cursorAt(prompt.cursor.row, prompt.cursor.col, state.prompt?.mode === "normal" ? cursorBlock : cursorBar)
       : cursorAt(1, 1, cursorBlock, false);
-  flushFrame({ rows, cursor });
+  return { rows, cursor };
+}
+
+export function render(state: AppState): void {
+  state.cols = process.stdout.columns || state.cols || 80;
+  state.rows = process.stdout.rows || state.rows || 24;
+  flushFrame(buildFrame(state));
 }

@@ -1,4 +1,4 @@
-import { addDays, occurrencesOnDate, todayKey } from "@whale-cal/shared/dates";
+import { addDays, isDateKey, isTimeKey, occurrencesOnDate, todayKey } from "@whale-cal/shared/dates";
 import type { Calendar, CalendarDatabase, CalendarEvent, CalendarView, DateKey, EventDraft, EventOccurrence, RecurrenceRule } from "@whale-cal/shared/types";
 
 export type Focus = "calendar" | "sidebar";
@@ -15,11 +15,17 @@ export interface EditorState {
   active: number;
   cursor: number;
   mode: VimMode;
+  error?: string;
+  saving?: string;
+  originalDate?: DateKey;
+  saveDate?: DateKey;
+  lastStartDate?: DateKey;
 }
 
 export interface Notice { text: string; kind: "info" | "success" | "warning" | "error"; at: number }
 
 export interface CalendarCellHit { date: DateKey; left: number; right: number; top: number; bottom: number }
+export interface ActionHit { action: string; left: number; right: number; row: number }
 export interface LayoutState {
   sidebarWidth: number;
   calendarRows: Array<{ calendarId: string; row: number }>;
@@ -27,6 +33,9 @@ export interface LayoutState {
   mainLeft: number;
   bodyTop: number;
   bodyBottom: number;
+  actions: ActionHit[];
+  eventRows: Array<{ index: number; left: number; right: number; row: number; date?: DateKey; eventId?: string }>;
+  editorFields: Array<{ index: number; left: number; right: number; row: number }>;
 }
 
 export interface AppState {
@@ -41,6 +50,7 @@ export interface AppState {
   editor: EditorState | null;
   confirmDelete: CalendarEvent | null;
   dayOpen: boolean;
+  detailScroll: number;
   helpOpen: boolean;
   notice: Notice | null;
   remoteAlias: string | null;
@@ -59,9 +69,9 @@ export function createState(): AppState {
   return {
     database: emptyDatabase(), selectedDate: todayKey(), selectedEventIndex: 0, selectedCalendarIndex: 0,
     view: "month", focus: "calendar", sidebarOpen: false, prompt: null, editor: null, confirmDelete: null,
-    dayOpen: false, helpOpen: false, notice: { text: "Connecting to cald…", kind: "info", at: Date.now() }, remoteAlias: null,
+    dayOpen: false, detailScroll: 0, helpOpen: false, notice: { text: "Connecting to cald…", kind: "info", at: Date.now() }, remoteAlias: null,
     connected: false, cols: process.stdout.columns || 100, rows: process.stdout.rows || 30, pendingKeys: "",
-    layout: { sidebarWidth: 0, calendarRows: [], monthCells: [], mainLeft: 1, bodyTop: 2, bodyBottom: 20 },
+    layout: { sidebarWidth: 0, calendarRows: [], monthCells: [], mainLeft: 1, bodyTop: 2, bodyBottom: 20, actions: [], eventRows: [], editorFields: [] },
   };
 }
 
@@ -84,6 +94,7 @@ export function selectedOccurrence(state: AppState): EventOccurrence | null {
 export function selectDate(state: AppState, key: DateKey): void {
   state.selectedDate = key;
   state.selectedEventIndex = 0;
+  state.detailScroll = 0;
 }
 
 export function moveDate(state: AppState, days: number): void { selectDate(state, addDays(state.selectedDate, days)); }
@@ -128,7 +139,7 @@ export function createEditor(state: AppState, event?: CalendarEvent): EditorStat
   ];
   return {
     kind: event ? "edit" : "create", ...(event ? { eventId: event.id } : {}), fields,
-    active: 0, cursor: fields[0]!.value.length, mode: "insert",
+    active: 0, cursor: fields[0]!.value.length, mode: "insert", originalDate: event?.startDate, lastStartDate: fields[1]!.value,
   };
 }
 
@@ -148,7 +159,16 @@ function parseRepeat(value: string): RecurrenceRule | undefined {
   };
 }
 
+export function syncEditorDates(editor: EditorState): void {
+  const start = field(editor, "startDate");
+  if (!isDateKey(start) || start === editor.lastStartDate) return;
+  const end = editor.fields.find(item => item.key === "endDate")!;
+  if (end.value === editor.lastStartDate) end.value = start;
+  editor.lastStartDate = start;
+}
+
 export function editorDraft(state: AppState, editor: EditorState): EventDraft {
+  syncEditorDates(editor);
   const calendarName = field(editor, "calendar");
   const calendar = state.database.calendars.find(item => item.name.toLowerCase() === calendarName.toLowerCase())
     ?? state.database.calendars.find(item => item.id === calendarName);
@@ -159,6 +179,13 @@ export function editorDraft(state: AppState, editor: EditorState): EventDraft {
   const endDate = field(editor, "endDate") || startDate;
   const startTime = field(editor, "startTime");
   const endTime = field(editor, "endTime");
+  if (!isDateKey(startDate)) throw new Error("Date must be a real date in YYYY-MM-DD format.");
+  if (!isDateKey(endDate)) throw new Error("End date must be a real date in YYYY-MM-DD format.");
+  if (endDate < startDate) throw new Error("End date must not be before the start date.");
+  if (startTime && !isTimeKey(startTime)) throw new Error("Start time must use 24-hour HH:MM format, e.g. 09:00.");
+  if (endTime && !isTimeKey(endTime)) throw new Error("End time must use 24-hour HH:MM format, e.g. 10:00.");
+  if (endTime && !startTime) throw new Error("Add a start time, or clear both times for an all-day event.");
+  if (startDate === endDate && startTime && endTime && endTime <= startTime) throw new Error("End time must be after the start time.");
   const location = field(editor, "location");
   const notes = field(editor, "notes");
   return {
@@ -171,4 +198,12 @@ export function editorDraft(state: AppState, editor: EditorState): EventDraft {
 
 export function setNotice(state: AppState, text: string, kind: Notice["kind"] = "info"): void {
   state.notice = { text, kind, at: Date.now() };
+}
+
+export function settleEditorSave(state: AppState, reqId: string, event: CalendarEvent): void {
+  if (state.editor?.saving !== reqId) return;
+  selectDate(state, state.editor.saveDate ?? event.startDate);
+  state.editor = null;
+  state.dayOpen = true;
+  state.selectedEventIndex = Math.max(0, eventsOnSelectedDate(state).findIndex(item => item.event.id === event.id));
 }

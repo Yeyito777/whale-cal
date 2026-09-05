@@ -72,15 +72,27 @@ current GUI launchd domain when available and starts automatically at login.
 | `Ctrl+C` or `/quit` | quit the TUI (daemon stays alive) |
 
 The calendar starts full-width with the optional sidebar closed. `Ctrl+S` opens
-the calendar filter and selected-day details, and that preference is remembered.
+the calendar filters, and that preference is remembered. The toolbar provides
+clickable date navigation, view switching, and event creation without shortcut
+labels. The month grid uses only the weeks belonging to that month, with visible
+week boundaries and overflow counts for busy days.
 
 Pressing `Enter` on the calendar opens a detailed day panel. Within that panel,
 `j`/`k` selects an event, `h`/`l` moves between days, and `Enter` or `e` edits
-that selected event. `Esc` returns to the calendar.
+that selected event. `Esc` returns to the calendar. A day uses a split event list
+and details layout on wide terminals, stacking them on narrower terminals.
+Click an event to inspect it. Notes retain paragraphs and wrap to the available
+width; scroll the details with the mouse wheel or `Ctrl+D`/`Ctrl+U`. Clicking an
+already selected month cell opens that day; agenda entries are clickable too.
 
 The event form uses `Tab`/`Shift+Tab` (or `j`/`k` in normal mode) to move between
 fields, `i`/`a` to enter insert mode, `Esc` to return to normal mode, and
 `Ctrl+S` or `Enter` in normal mode to save.
+Save and Cancel are also clickable and reachable with Tab. Fields scroll with
+the cursor, including Unicode text. Invalid dates and times produce an inline
+error without discarding the draft. The form stays open until the daemon
+acknowledges a save, then returns to the saved event's day. Moving a single-day
+event's start date also moves its end date unless it was set separately.
 
 Quick creation is available from the command prompt:
 
