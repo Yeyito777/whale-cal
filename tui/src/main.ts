@@ -1,7 +1,9 @@
 import { addDays, addMonths, occurrencesForRange, todayKey } from "@whale-cal/shared/dates";
 import type { CalendarEvent, CalendarView, EventDraft, EventPatch } from "@whale-cal/shared/types";
 import { DaemonClient, type ClientEvent } from "./client";
-import { completeCommand, runCommand, type CommandAction } from "./commands";
+import { runCommand, type CommandAction } from "./commands";
+import { PromptController } from "./prompt";
+import { cycleCompletion } from "./completion";
 import { invalidateFrame } from "./frame";
 import { InputBuffer, parseInput, type KeyEvent, type MouseEvent } from "./input";
 import { loadPreferences, savePreferences } from "./preferences";
@@ -26,8 +28,8 @@ let renderTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
 const pending = new Map<string, string>();
-const commandHistory: string[] = [];
-let commandHistoryIndex = 0;
+const promptController = new PromptController();
+const statusTimer = setInterval(() => scheduleRender(), 1000);
 
 function scheduleRender(immediate = false): void {
   if (!running) return;
@@ -332,97 +334,12 @@ function handlePromptKey(key: KeyEvent): void {
     exitPromptAndCycleFocus(state);
     return;
   }
-  if (key.type === "enter") {
+  const result = promptController.handle(prompt, key, state);
+  if (result === "submit") {
     const text = prompt.text;
     state.prompt = null;
-    if (text.trim()) { commandHistory.push(text); commandHistoryIndex = commandHistory.length; }
     execute(runCommand(text, state));
-    return;
-  }
-  if (key.type === "tab") {
-    const completed = completeCommand(prompt.text, state);
-    if (completed) { prompt.text = completed; prompt.cursor = completed.length; }
-    return;
-  }
-  if (key.type === "up" && commandHistory.length) {
-    commandHistoryIndex = Math.max(0, commandHistoryIndex - 1);
-    prompt.text = commandHistory[commandHistoryIndex] ?? ""; prompt.cursor = prompt.text.length; return;
-  }
-  if (key.type === "down" && commandHistory.length) {
-    commandHistoryIndex = Math.min(commandHistory.length, commandHistoryIndex + 1);
-    prompt.text = commandHistory[commandHistoryIndex] ?? ""; prompt.cursor = prompt.text.length; return;
-  }
-  if (prompt.mode === "normal") {
-    if (key.type === "escape") { state.prompt = null; return; }
-    if (key.type === "left") prompt.cursor = previousGrapheme(prompt.text, prompt.cursor);
-    else if (key.type === "right") prompt.cursor = nextGrapheme(prompt.text, prompt.cursor);
-    else if (key.type === "home") prompt.cursor = 0;
-    else if (key.type === "end") prompt.cursor = prompt.text.length;
-    else if (key.type === "char" && key.char) {
-      const isWord = (char: string) => /[A-Za-z0-9_]/.test(char);
-      const wordForward = () => {
-        let cursor = prompt.cursor;
-        while (cursor < prompt.text.length && isWord(prompt.text[cursor]!)) cursor++;
-        while (cursor < prompt.text.length && !isWord(prompt.text[cursor]!)) cursor++;
-        return cursor;
-      };
-      const wordBackward = () => {
-        let cursor = Math.max(0, prompt.cursor - 1);
-        while (cursor > 0 && !isWord(prompt.text[cursor]!)) cursor--;
-        while (cursor > 0 && isWord(prompt.text[cursor - 1]!)) cursor--;
-        return cursor;
-      };
-      switch (key.char) {
-        case "i": prompt.mode = "insert"; return;
-        case "a": prompt.cursor = nextGrapheme(prompt.text, prompt.cursor); prompt.mode = "insert"; return;
-        case "I": prompt.cursor = 0; prompt.mode = "insert"; return;
-        case "A": prompt.cursor = prompt.text.length; prompt.mode = "insert"; return;
-        case "h": prompt.cursor = previousGrapheme(prompt.text, prompt.cursor); return;
-        case "l": prompt.cursor = nextGrapheme(prompt.text, prompt.cursor); return;
-        case "0": prompt.cursor = 0; return;
-        case "$": prompt.cursor = prompt.text.length; return;
-        case "w": prompt.cursor = wordForward(); return;
-        case "b": prompt.cursor = wordBackward(); return;
-        case "x": {
-          const end = nextGrapheme(prompt.text, prompt.cursor);
-          prompt.text = prompt.text.slice(0, prompt.cursor) + prompt.text.slice(end);
-          return;
-        }
-        case "X": {
-          const previous = previousGrapheme(prompt.text, prompt.cursor);
-          prompt.text = prompt.text.slice(0, previous) + prompt.text.slice(prompt.cursor);
-          prompt.cursor = previous;
-          return;
-        }
-        case "D": prompt.text = prompt.text.slice(0, prompt.cursor); return;
-        case "C": prompt.text = prompt.text.slice(0, prompt.cursor); prompt.mode = "insert"; return;
-      }
-    }
-    return;
-  }
-  if (key.type === "escape") {
-    prompt.mode = "normal";
-    prompt.cursor = previousGrapheme(prompt.text, prompt.cursor);
-    return;
-  }
-  if (key.type === "char" && key.char) {
-    prompt.text = prompt.text.slice(0, prompt.cursor) + key.char + prompt.text.slice(prompt.cursor);
-    prompt.cursor += key.char.length;
-  } else if (key.type === "paste" && key.text) {
-    const text = key.text.replace(/[\r\n]+/g, " ");
-    prompt.text = prompt.text.slice(0, prompt.cursor) + text + prompt.text.slice(prompt.cursor);
-    prompt.cursor += text.length;
-  } else if (key.type === "left") prompt.cursor = previousGrapheme(prompt.text, prompt.cursor);
-  else if (key.type === "right") prompt.cursor = nextGrapheme(prompt.text, prompt.cursor);
-  else if (key.type === "home") prompt.cursor = 0;
-  else if (key.type === "end") prompt.cursor = prompt.text.length;
-  else if (key.type === "ctrl-u") { prompt.text = prompt.text.slice(prompt.cursor); prompt.cursor = 0; }
-  else if (key.type === "backspace" && prompt.cursor > 0) {
-    const previous = previousGrapheme(prompt.text, prompt.cursor);
-    prompt.text = prompt.text.slice(0, previous) + prompt.text.slice(prompt.cursor); prompt.cursor = previous;
-  } else if (key.type === "delete" && prompt.cursor < prompt.text.length) {
-    prompt.text = prompt.text.slice(0, prompt.cursor) + prompt.text.slice(nextGrapheme(prompt.text, prompt.cursor));
-  }
+  } else if (result === "close") state.prompt = null;
 }
 
 function moveSelectedEvent(amount: number): void {
@@ -542,7 +459,31 @@ function handleKey(key: KeyEvent): void {
 }
 
 function handleMouse(event: MouseEvent): void {
-  if (state.prompt || state.helpOpen) return;
+  if (state.helpOpen) return;
+  if (state.prompt) {
+    if (state.prompt.completion && (event.button === 64 || event.button === 65)) {
+      cycleCompletion(state.prompt, event.button === 64 ? -1 : 1);
+      scheduleRender(); return;
+    }
+    if (event.action === "press" && event.button === 0) {
+      const prompt = state.prompt;
+      const hit = state.layout.actions.find(hit => hit.row === event.row && event.col >= hit.left && event.col <= hit.right && hit.action.startsWith("complete:"));
+      if (hit && prompt.completion) {
+        const index = Number(hit.action.slice(9));
+        prompt.completion.selection = (index + prompt.completion.items.length - 1) % prompt.completion.items.length;
+        cycleCompletion(prompt, 1);
+        prompt.completion = null;
+        scheduleRender();
+      } else if (event.row === state.rows - 1) {
+        const window = inputWindow(prompt.text, prompt.cursor, state.cols - 5);
+        let position = window.start;
+        while (position < prompt.text.length && width(prompt.text.slice(window.start, nextGrapheme(prompt.text, position))) <= event.col - 6) position = nextGrapheme(prompt.text, position);
+        prompt.cursor = position; prompt.selectionAnchor = undefined;
+        scheduleRender();
+      }
+    }
+    return;
+  }
   if (state.confirmDelete) {
     if (event.action === "press" && event.button === 0) {
       const hit = state.layout.actions.find(hit => hit.row === event.row && event.col >= hit.left && event.col <= hit.right);
@@ -573,6 +514,10 @@ function handleMouse(event: MouseEvent): void {
     return;
   }
   if (event.action === "press" && event.button === 0) {
+    if (event.row === state.rows - 1) {
+      state.prompt = { text: "", cursor: 0, mode: "insert" };
+      scheduleRender(); return;
+    }
     const hit = state.layout.actions.find(hit => hit.row === event.row && event.col >= hit.left && event.col <= hit.right);
     if (hit) {
       switch (hit.action) {
@@ -654,6 +599,7 @@ function cleanup(): void {
   if (renderTimer) clearTimeout(renderTimer);
   if (reconnectTimer) clearTimeout(reconnectTimer);
   if (noticeTimer) clearTimeout(noticeTimer);
+  clearInterval(statusTimer);
   try { savePreferences(state); } catch { /* terminal restoration is more important */ }
   client?.disconnect();
   restoreTerminal();

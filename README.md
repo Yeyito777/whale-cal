@@ -94,6 +94,29 @@ error without discarding the draft. The form stays open until the daemon
 acknowledges a save, then returns to the saved event's day. Moving a single-day
 event's start date also moves its end date unless it was set separately.
 
+### Prompt and statusline
+
+Typing `/` opens a live suggestion popup. Tab/Shift+Tab or Up/Down cycles and
+previews candidates; Enter executes the current text. Escape keeps the preview,
+closes the popup, and enters normal mode. Type a space after a completed command
+to see argument suggestions for views, calendar operations/names, SSH aliases,
+dates, quick-add weekdays, and existing event titles for search. Suggestions are
+also clickable. Only Cal commands are offered, not Exocortex's chat/model commands.
+
+The single-line prompt supports insert/normal modes, character and word motions,
+counts, `d`/`c`/`y` operators, word and simple delimiter text objects, `f`/`t`
+find motions, `r` replacement, visual selection, yank/paste, and undo/redo.
+Insert mode supports Ctrl+A/E, Ctrl+W/U/K deletion, and Ctrl+Y yank-back.
+Ctrl+P/N browses session command history and restores unfinished input; Up/Down
+does the same when no popup is open. Ctrl+J/K still changes panel focus from
+normal mode. The yank register and history belong to the current TUI session.
+
+Below the prompt, a compact statusline shows the next event and its live
+`Happens in: 1h30m` countdown. It uses the current local time and visible calendars,
+not the selected date, and respects recurrence limits. All-day events start at
+local midnight; already-started events are skipped. Titles shorten on narrow
+terminals so the countdown stays visible. Connection status remains in the top bar.
+
 Quick creation is available from the command prompt:
 
 ```text

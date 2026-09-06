@@ -4,6 +4,8 @@ import {
 } from "@whale-cal/shared/dates";
 import type { Calendar, DateKey, EventOccurrence } from "@whale-cal/shared/types";
 import { COMMANDS } from "./commands";
+import { refreshCompletion } from "./completion";
+import { renderStatusline } from "./statusline";
 import { cursorAt, flushFrame, overlayAt } from "./frame";
 import {
   eventsOnSelectedDate, selectedCalendar, selectedOccurrence, type AppState, type EditorState, type Notice, visibleEvents,
@@ -361,7 +363,7 @@ function renderPromptSeparator(state: AppState, borderColor: string): string {
 }
 
 function promptRendering(state: AppState): { line: string; cursor: { row: number; col: number } | null } {
-  const row = state.rows;
+  const row = state.rows - 1;
   if (!state.prompt) {
     const pending = state.pendingKeys ? ` ${theme.warning}${state.pendingKeys}` : "";
     return { line: segment(`${theme.vimNormal} N ${theme.text}❯${pending}`, state.cols), cursor: null };
@@ -369,12 +371,40 @@ function promptRendering(state: AppState): { line: string; cursor: { row: number
   const modeLabel = state.prompt.mode === "insert" ? "I" : "N";
   const modeColor = state.prompt.mode === "insert" ? theme.vimInsert : theme.vimNormal;
   const prefix = ` ${modeLabel} ❯ `, max = Math.max(1, state.cols - width(prefix));
-  const start = Math.max(0, state.prompt.cursor - max + 2);
-  const shown = state.prompt.text.slice(start, start + max);
+  const window = inputWindow(state.prompt.text, state.prompt.cursor, max);
+  let shown = window.text;
+  if (state.prompt.selectionAnchor !== undefined) {
+    const start = Math.min(state.prompt.selectionAnchor, state.prompt.cursor);
+    const end = Math.max(state.prompt.selectionAnchor, state.prompt.cursor);
+    shown = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(window.text)].map(item =>
+      item.index + window.start >= start && item.index + window.start <= end
+        ? `${theme.selectionBg}${item.segment}${theme.appBg}` : item.segment).join("");
+  }
   return {
     line: segment(`${modeColor} ${modeLabel} ${theme.text}❯ ${theme.command}${shown}`, state.cols),
-    cursor: { row, col: width(prefix) + state.prompt.cursor - start + 1 },
+    cursor: { row, col: width(prefix) + window.column + 1 },
   };
+}
+
+function renderCompletion(state: AppState, rows: string[]): void {
+  if (!state.prompt || state.editor || state.helpOpen || state.confirmDelete) return;
+  refreshCompletion(state.prompt, state);
+  const menu = state.prompt.completion;
+  if (!menu) return;
+  const capacity = Math.min(6, menu.items.length, state.rows - 9);
+  const start = Math.max(0, Math.min(menu.selection - capacity + 1, menu.items.length - capacity));
+  const boxWidth = Math.min(78, state.cols - 8), left = 5;
+  const top = state.rows - 4 - capacity - 1;
+  putOverlayRow(rows, top, left, boxWidth, titledOverlayBorder("Suggestions", boxWidth));
+  for (let i = 0; i < capacity; i++) {
+    const index = start + i, item = menu.items[index]!;
+    const nameWidth = Math.min(25, Math.floor(boxWidth * 0.4));
+    const content = `${theme.command} ${pad(truncate(item.label, nameWidth), nameWidth)} ${theme.muted}${truncate(item.description, boxWidth - nameWidth - 5)}`;
+    putOverlayRow(rows, top + 1 + i, left, boxWidth, framedOverlayRow(content, boxWidth, menu.selection === index ? theme.sidebarSelBg : theme.appBg));
+    state.layout.actions.push({ action: `complete:${index}`, left, right: left + boxWidth - 1, row: top + 2 + i });
+  }
+  const label = menu.items.length > capacity ? ` ${start + 1}–${start + capacity} / ${menu.items.length} ` : "";
+  putOverlayRow(rows, top + capacity + 1, left, boxWidth, `${theme.borderFocused}└${"─".repeat(boxWidth - 2 - width(label))}${theme.muted}${label}${theme.borderFocused}┘`);
 }
 
 export function buildFrame(state: AppState): { rows: string[]; cursor: string } {
@@ -385,7 +415,7 @@ export function buildFrame(state: AppState): { rows: string[]; cursor: string } 
     return { rows, cursor: cursorAt(1, 1, cursorBlock, false) };
   }
   rows[0] = renderTopbar(state);
-  const footerTop = Math.max(3, state.rows - 1);
+  const footerTop = Math.max(3, state.rows - 2);
   const bodyTop = 3;
   const bodyHeight = Math.max(0, footerTop - bodyTop);
   const sidebarWidth = state.sidebarOpen && state.cols >= 76 ? Math.min(31, Math.floor(state.cols * 0.32)) : 0;
@@ -400,8 +430,9 @@ export function buildFrame(state: AppState): { rows: string[]; cursor: string } 
 
   const prompt = promptRendering(state);
   const borderColor = state.focus === "calendar" ? theme.borderFocused : theme.borderUnfocused;
-  rows[state.rows - 2] = renderPromptSeparator(state, borderColor);
-  rows[state.rows - 1] = prompt.line;
+  rows[state.rows - 3] = renderPromptSeparator(state, borderColor);
+  rows[state.rows - 2] = prompt.line;
+  rows[state.rows - 1] = renderStatusline(state);
 
   let overlayCursor: { row: number; col: number } | null = null;
   if (state.dayOpen) renderDayOverlay(state, rows);
@@ -411,6 +442,7 @@ export function buildFrame(state: AppState): { rows: string[]; cursor: string } 
   if (state.helpOpen) renderHelpOverlay(state, rows);
   if (state.confirmDelete) renderDeleteOverlay(state, rows);
   if (state.editor) overlayCursor = renderEditorOverlay(state, rows, state.editor);
+  renderCompletion(state, rows);
   const cursor = overlayCursor
     ? cursorAt(overlayCursor.row, overlayCursor.col, state.editor?.mode === "insert" ? cursorBar : cursorBlock)
     : prompt.cursor ? cursorAt(prompt.cursor.row, prompt.cursor.col, state.prompt?.mode === "normal" ? cursorBlock : cursorBar)

@@ -2,7 +2,7 @@ import { nextGrapheme } from "./text";
 
 export type KeyType = "char" | "enter" | "tab" | "backtab" | "backspace" | "delete" | "escape"
   | "left" | "right" | "up" | "down" | "home" | "end" | "paste" | "unknown"
-  | "ctrl-b" | "ctrl-c" | "ctrl-d" | "ctrl-e" | "ctrl-f" | "ctrl-j" | "ctrl-k" | "ctrl-l" | "ctrl-n"
+  | "ctrl-a" | "ctrl-w" | "ctrl-b" | "ctrl-c" | "ctrl-d" | "ctrl-e" | "ctrl-f" | "ctrl-j" | "ctrl-k" | "ctrl-l" | "ctrl-n"
   | "ctrl-p" | "ctrl-r" | "ctrl-s" | "ctrl-u" | "ctrl-y" | "ctrl-shift-r";
 
 export interface KeyEvent {
@@ -18,6 +18,7 @@ export type InputEvent = KeyEvent | MouseEvent;
 const pasteStart = "\x1b[200~", pasteEnd = "\x1b[201~";
 
 const CTRL: Partial<Record<number, KeyType>> = {
+  1: "ctrl-a", 23: "ctrl-w",
   2: "ctrl-b", 3: "ctrl-c", 4: "ctrl-d", 5: "ctrl-e", 6: "ctrl-f", 10: "ctrl-j", 11: "ctrl-k", 12: "ctrl-l",
   14: "ctrl-n", 16: "ctrl-p", 18: "ctrl-r", 19: "ctrl-s", 21: "ctrl-u", 25: "ctrl-y",
 };

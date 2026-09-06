@@ -4,7 +4,13 @@ import type { Calendar, CalendarDatabase, CalendarEvent, CalendarView, DateKey, 
 export type Focus = "calendar" | "sidebar";
 export type VimMode = "normal" | "insert";
 
-export interface PromptState { text: string; cursor: number; mode: VimMode }
+export interface PromptState {
+  text: string; cursor: number; mode: VimMode;
+  completion?: import("./completion").CompletionState | null;
+  completionText?: string;
+  completionCursor?: number;
+  selectionAnchor?: number;
+}
 
 export type EditorFieldKey = "title" | "startDate" | "endDate" | "startTime" | "endTime" | "calendar" | "location" | "repeat" | "notes";
 export interface EditorField { key: EditorFieldKey; label: string; value: string }

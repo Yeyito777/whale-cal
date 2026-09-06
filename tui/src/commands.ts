@@ -2,7 +2,6 @@ import { isDateKey } from "@whale-cal/shared/dates";
 import { parseQuickAdd } from "@whale-cal/shared/quick-add";
 import type { CalendarView, EventDraft } from "@whale-cal/shared/types";
 import type { AppState } from "./state";
-import { loadSshAliases } from "./ssh-aliases";
 
 export type CommandAction =
   | { type: "none" }
@@ -77,25 +76,4 @@ export function runCommand(text: string, state: AppState): CommandAction {
     }
     default: return { type: "error", message: `Unknown command: ${name}` };
   }
-}
-
-export function completeCommand(text: string, state?: AppState): string | null {
-  let candidates: string[];
-  let prefix = "";
-  if (text.startsWith("/ssh ")) {
-    prefix = "/ssh ";
-    candidates = [...loadSshAliases(), "cancel"];
-  } else if (text.startsWith("/view ")) {
-    prefix = "/view ";
-    candidates = ["month", "week", "agenda"];
-  } else if (text.startsWith("/calendar toggle ") && state) {
-    prefix = "/calendar toggle ";
-    candidates = state.database.calendars.map(calendar => calendar.name);
-  } else {
-    const matches = COMMANDS.map(([name]) => name).filter(name => name.startsWith(text));
-    return matches.length === 1 ? matches[0]! + " " : null;
-  }
-  const fragment = text.slice(prefix.length).toLowerCase();
-  const matches = candidates.filter(candidate => candidate.toLowerCase().startsWith(fragment));
-  return matches.length === 1 ? prefix + matches[0]! + " " : null;
 }
