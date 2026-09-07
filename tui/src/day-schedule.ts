@@ -14,15 +14,16 @@ export function durationLabel(minutes: number): string {
 }
 
 /** Full local wall-clock day, using only the visible occurrences supplied by the caller.
- * All-day events block the day. An unspecified end conservatively blocks the
- * remaining day rather than inventing availability. Occurrences may span days.
+ * All-day entries are date markers, not timed reservations. A timed event with
+ * an unspecified end conservatively blocks the remaining day rather than
+ * inventing availability. Occurrences may span days.
  */
 export function daySchedule(occurrences: readonly EventOccurrence[], date: DateKey): { rows: ScheduleRow[]; freeMinutes: number } {
   const events = occurrences.map((occurrence, eventIndex) => {
     const { event } = occurrence;
     const allDay = !event.startTime;
     const start = allDay || occurrence.startDate < date ? 0 : minute(event.startTime!);
-    const end = allDay || occurrence.endDate > date || !event.endTime ? 1440 : minute(event.endTime);
+    const end = allDay ? 0 : occurrence.endDate > date || !event.endTime ? 1440 : minute(event.endTime);
     const time = allDay ? "all-day" : !event.endTime ? `${clock(start)}–?` : range(start, end);
     return { eventIndex, start, end, time };
   }).sort((a, b) => a.start - b.start || a.eventIndex - b.eventIndex);

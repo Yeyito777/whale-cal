@@ -28,12 +28,39 @@ test("overlapping, nested and adjacent events never create false gaps or double-
   expect(result.rows.filter(r => r.kind === "event")).toHaveLength(4);
 });
 
-test("empty days are fully free; all-day and unknown-duration events are conservative", () => {
+test("all-day markers remain visible without reserving time; unknown timed durations remain conservative", () => {
   expect(schedule([])).toEqual({ rows: [{ kind: "free", start: 0, end: 1440, time: "00:00–24:00" }], freeMinutes: 1440 });
-  expect(schedule([event("Offsite")]).freeMinutes).toBe(0);
+  const allDay = schedule([event("Due today")]);
+  expect(allDay.freeMinutes).toBe(1440);
+  expect(allDay.rows[0]).toMatchObject({ kind: "event", eventIndex: 0, time: "all-day" });
+  expect(allDay.rows[1]).toMatchObject({ kind: "free", time: "00:00–24:00" });
   const unknown = schedule([event("Open-ended", "10:00"), event("Later", "12:00", "13:00")]);
   expect(unknown.freeMinutes).toBe(600);
   expect(unknown.rows[1]).toMatchObject({ kind: "event", time: "10:00–?" });
+});
+
+test("an all-day deadline cannot hide the gaps between classes and meetings", () => {
+  const result = schedule([
+    event("Form due"), event("Prep due", "09:00", "09:05"),
+    event("Lecture", "09:10", "11:00"), event("Math", "15:00", "16:00"),
+    event("Quiz due", "15:00", "15:05"), event("Plenary", "16:00", "18:00"),
+    event("Meeting", "20:30", "21:30"),
+  ]);
+  expect(result.freeMinutes).toBe(1085);
+  expect(result.rows.filter(r => r.kind === "free").map(r => r.time)).toEqual([
+    "00:00–09:00", "09:05–09:10", "11:00–15:00", "18:00–20:30", "21:30–24:00",
+  ]);
+  expect(result.rows.filter(r => r.kind === "event").map(r => r.eventIndex)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+});
+
+test("multi-day and recurring all-day markers do not consume timed availability", () => {
+  const reminder = event("Reminder", undefined, undefined, {
+    startDate: "2026-09-10", endDate: "2026-09-12",
+    recurrence: { frequency: "weekly", interval: 1, count: 2 },
+  });
+  const result = schedule([reminder, event("Call", "10:00", "11:00", { startDate: "2026-09-18", endDate: "2026-09-18" })], "2026-09-18");
+  expect(result.freeMinutes).toBe(23 * 60);
+  expect(result.rows.filter(r => r.kind === "event")).toHaveLength(2);
 });
 
 test("overnight and recurring multi-day occurrences clip to the inspected day", () => {
@@ -71,7 +98,7 @@ test("day render includes gaps, keeps them non-editable, and ignores hidden cale
     { id: "work", name: "Work", color: "#c792ea", visible: true, createdAt: "", updatedAt: "" },
     { id: "hidden", name: "Hidden", color: "#c792ea", visible: false, createdAt: "", updatedAt: "" },
   ];
-  state.database.events = [event("Tutorial", "10:00", "11:00"), event("Seminar", "13:00", "14:00"), event("Hidden", undefined, undefined, { calendarId: "hidden" })];
+  state.database.events = [event("Tutorial", "10:00", "11:00"), event("Seminar", "13:00", "14:00"), event("Hidden", "00:00", "23:59", { calendarId: "hidden" })];
   expect(daySchedule(eventsOnSelectedDate(state), date).freeMinutes).toBe(22 * 60);
   const frame = buildFrame(state);
   const text = frame.rows.map(stripAnsi).join("\n");
@@ -82,4 +109,9 @@ test("day render includes gaps, keeps them non-editable, and ignores hidden cale
   expect(state.layout.eventRows[1]!.row - state.layout.eventRows[0]!.row).toBe(2);
   for (const hit of state.layout.eventRows) expect(stripAnsi(frame.rows[hit.row - 1]!)).not.toContain("○ Free");
   expect(state.layout.dayList!.bottom).toBeGreaterThan(state.layout.eventRows.at(-1)!.row);
+  state.database.events.push(event("All-day deadline"));
+  const withReminder = buildFrame(state).rows.map(stripAnsi).join("\n");
+  expect(withReminder).toContain("22h free");
+  expect(withReminder).toContain("11:00–13:00");
+  expect(withReminder).toContain("All-day deadline");
 });

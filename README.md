@@ -91,8 +91,10 @@ already selected month cell opens that day; agenda entries are clickable too.
 The day list also shows free-time gaps from 00:00 through 24:00, their durations,
 and the day's total free time. Overlapping events count as one busy interval;
 only visible calendars are considered. Gap rows are informational: navigation
-and editing still target real events. All-day events block the full day, and
-events without an end time conservatively block the remaining day (shown as
+and editing still target real events. All-day entries remain visible as date
+markers (for example birthdays and deadlines), but do not block timed gaps.
+Free time describes the gaps between timed reservations, not the absence of
+all-day commitments. Timed events without an end time conservatively block the remaining day (shown as
 `HH:MM–?`), rather than inventing an end time. Overnight events are clipped to
 the inspected day's boundaries.
 
