@@ -573,8 +573,8 @@ function handleMouse(event: MouseEvent): void {
   }
   if (state.dayOpen) {
     if (event.button === 64 || event.button === 65) {
-      const list = state.layout.eventRows[0];
-      if (list && event.col >= list.left && event.col <= list.right && event.row <= (state.layout.eventRows.at(-1)?.row ?? 0)) moveSelectedEvent(event.button === 64 ? -1 : 1);
+      const list = state.layout.dayList;
+      if (list && event.col >= list.left && event.col <= list.right && event.row >= list.top && event.row <= list.bottom) moveSelectedEvent(event.button === 64 ? -1 : 1);
       else state.detailScroll = Math.max(0, state.detailScroll + (event.button === 64 ? -3 : 3));
     } else if (event.action === "press" && event.button === 0) {
       const hit = state.layout.eventRows.find(hit => hit.row === event.row && event.col >= hit.left && event.col <= hit.right);

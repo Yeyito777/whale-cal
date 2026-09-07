@@ -35,6 +35,7 @@ export interface Notice { text: string; kind: "info" | "success" | "warning" | "
 export interface CalendarCellHit { date: DateKey; left: number; right: number; top: number; bottom: number }
 export interface ActionHit { action: string; left: number; right: number; row: number }
 export interface LayoutState {
+  dayList?: { left: number; right: number; top: number; bottom: number };
   sidebarWidth: number;
   calendarRows: Array<{ calendarId: string; row: number }>;
   monthCells: CalendarCellHit[];

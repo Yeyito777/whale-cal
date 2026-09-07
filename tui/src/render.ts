@@ -6,6 +6,7 @@ import type { Calendar, DateKey, EventOccurrence } from "@whale-cal/shared/types
 import { COMMANDS } from "./commands";
 import { isPromptFocused } from "./focus";
 import { stylePromptText } from "./prompt-style";
+import { daySchedule, durationLabel, scheduleWindow } from "./day-schedule";
 import { refreshCompletion } from "./completion";
 import { completionMenu } from "./completion-menu";
 import { renderStatusline, STATUSLINE_HEIGHT } from "./statusline";
@@ -243,9 +244,10 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
   const height = state.layout.bodyBottom - state.layout.bodyTop + 1;
   const split = totalWidth >= 96;
   const listWidth = split ? Math.floor(totalWidth * 0.46) : totalWidth;
-  const listHeight = split ? height : Math.min(Math.max(4, Math.floor(height * 0.42)), height);
+  const listHeight = split ? height : Math.min(Math.max(6, Math.floor(height * 0.42)), height);
   const detailWidth = split ? totalWidth - listWidth - 1 : totalWidth;
   const detailHeight = split ? height : height - listHeight - 1;
+  state.layout.dayList = { left, right: left + listWidth - 1, top: top + 1, bottom: top + listHeight };
   for (let row = 0; row < height; row++) putOverlayRow(rows, top + row, left, totalWidth, "");
   const putList = (row: number, content: string, active = false) => {
     if (row < listHeight) putOverlayRow(rows, top + row, left, listWidth, segment(content, listWidth, active ? theme.sidebarSelBg : theme.appBg));
@@ -253,20 +255,25 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
   const todayBadge = state.selectedDate === todayKey() ? todayHeader("Today", 7) + " " : " ";
   putList(0, `${todayBadge}${theme.text}${theme.bold}${formatLongDate(state.selectedDate)}${theme.boldOff}`);
   const capacity = Math.max(1, listHeight - 3);
-  const start = Math.max(0, Math.min(state.selectedEventIndex - Math.floor(capacity / 2), occurrences.length - capacity));
-  const range = occurrences.length > capacity ? ` · ${start + 1}–${Math.min(occurrences.length, start + capacity)} of ${occurrences.length}` : "";
-  putList(1, `${theme.muted} ${occurrences.length} event${occurrences.length === 1 ? "" : "s"}${range}`);
-  if (!occurrences.length) putList(3, `${theme.muted} Nothing scheduled. A little breathing room.`);
-  for (let i = start; i < Math.min(occurrences.length, start + capacity); i++) {
-    const occurrence = occurrences[i]!;
-    const active = i === state.selectedEventIndex;
-    const calendar = calendarFor(state, occurrence.event.calendarId);
-    const time = formatEventTime(occurrence.event);
-    const title = truncate(occurrence.event.title, listWidth - 21);
-    const content = `${active ? theme.accent : theme.muted} ${active ? "▸" : " "} ${theme.muted}${pad(time, 13)} ${eventColor(calendar?.color ?? "#1d9bf0")}● ${theme.text}${title}`;
+  const schedule = daySchedule(occurrences, state.selectedDate);
+  const start = scheduleWindow(schedule.rows, state.selectedEventIndex, capacity);
+  const range = schedule.rows.length > capacity ? ` · ${start + 1}–${Math.min(schedule.rows.length, start + capacity)} / ${schedule.rows.length}` : "";
+  putList(1, `${theme.muted} ${occurrences.length} event${occurrences.length === 1 ? "" : "s"} · ${durationLabel(schedule.freeMinutes)} free${range}`);
+  if (!occurrences.length) putList(2, `${theme.muted} Nothing scheduled. A little breathing room.`);
+  for (let i = start; i < Math.min(schedule.rows.length, start + capacity); i++) {
+    const item = schedule.rows[i]!;
     const row = 3 + i - start;
+    if (item.kind === "free") {
+      putList(row, `${theme.muted}   ${pad(item.time, 13)} ${theme.success}○ Free${theme.muted} · ${durationLabel(item.end - item.start)}`);
+      continue;
+    }
+    const occurrence = occurrences[item.eventIndex]!;
+    const active = item.eventIndex === state.selectedEventIndex;
+    const calendar = calendarFor(state, occurrence.event.calendarId);
+    const title = truncate(occurrence.event.title, listWidth - 21);
+    const content = `${active ? theme.accent : theme.muted} ${active ? "▸" : " "} ${theme.muted}${pad(item.time, 13)} ${eventColor(calendar?.color ?? "#1d9bf0")}● ${theme.text}${title}`;
     putList(row, content, active);
-    state.layout.eventRows.push({ index: i, left, right: left + listWidth - 1, row: top + row + 1 });
+    state.layout.eventRows.push({ index: item.eventIndex, left, right: left + listWidth - 1, row: top + row + 1 });
   }
   if (split) {
     for (let row = 0; row < height; row++) putOverlayRow(rows, top + row, left + listWidth, 1, `${theme.borderUnfocused}│`);
@@ -416,6 +423,7 @@ export function buildFrame(state: AppState): { rows: string[]; cursor: string } 
   if (state.focus === "sidebar" && (!state.sidebarOpen || state.cols < 76)) state.focus = "calendar";
   const rows = Array.from({ length: state.rows }, () => segment("", state.cols));
   if (state.cols < 54 || state.rows < 18) {
+    state.layout.dayList = undefined;
     rows[Math.floor(state.rows / 2)] = segment(`${theme.muted}${truncate("Resize terminal to at least 54 × 18", state.cols)}`, state.cols);
     state.layout.actions = []; state.layout.eventRows = []; state.layout.editorFields = []; state.layout.monthCells = []; state.layout.calendarRows = [];
     return { rows, cursor: cursorAt(1, 1, cursorBlock, false) };

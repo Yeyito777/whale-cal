@@ -88,6 +88,13 @@ and details layout on wide terminals, stacking them on narrower terminals.
 Click an event to inspect it. Notes retain paragraphs and wrap to the available
 width; scroll the details with the mouse wheel or `Ctrl+D`/`Ctrl+U`. Clicking an
 already selected month cell opens that day; agenda entries are clickable too.
+The day list also shows free-time gaps from 00:00 through 24:00, their durations,
+and the day's total free time. Overlapping events count as one busy interval;
+only visible calendars are considered. Gap rows are informational: navigation
+and editing still target real events. All-day events block the full day, and
+events without an end time conservatively block the remaining day (shown as
+`HH:MM–?`), rather than inventing an end time. Overnight events are clipped to
+the inspected day's boundaries.
 
 The event form uses `Tab`/`Shift+Tab` (or `j`/`k` in normal mode) to move between
 fields, `i`/`a` to enter insert mode, `Esc` to return to normal mode, and
