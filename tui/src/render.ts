@@ -282,8 +282,9 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
 function renderEditorOverlay(state: AppState, rows: string[], editor: EditorState): { row: number; col: number } | null {
   const boxWidth = Math.min(82, state.cols - 6);
   const valueWidth = boxWidth - 17;
-  const boxHeight = editor.fields.length + 4;
-  const top = Math.max(1, Math.floor((state.rows - STATUSLINE_HEIGHT - 1 - boxHeight) / 2));
+  const errorRows = state.rows >= 19 ? 1 : 0;
+  const boxHeight = editor.fields.length + 3 + errorRows;
+  const top = Math.max(1, Math.floor((state.rows - STATUSLINE_HEIGHT - 2 - boxHeight) / 2));
   const left = Math.max(1, Math.floor((state.cols - boxWidth) / 2) + 1);
   const put = (row: number, content: string) => putOverlayRow(rows, row, left, boxWidth, content);
   put(top, titledOverlayBorder(editor.kind === "create" ? "New event" : "Edit event", boxWidth));
@@ -300,16 +301,18 @@ function renderEditorOverlay(state: AppState, rows: string[], editor: EditorStat
     if (active && !editor.saving) cursor = { row: top + 2 + index, col: left + 15 + window.column };
   }
   const errorRow = top + editor.fields.length + 1;
-  put(errorRow, framedOverlayRow(`${theme.error} ${truncate(editor.error ?? "", boxWidth - 4)}`, boxWidth));
+  if (errorRows) put(errorRow, framedOverlayRow(`${theme.error} ${truncate(editor.error ?? "", boxWidth - 4)}`, boxWidth));
+  const actionsRow = errorRow + errorRows;
   let actions = " ";
   for (const [index, label] of [editor.saving ? "Saving…" : "Save", "Cancel"].entries()) {
     const text = ` ${label} `;
     const actionLeft = left + 1 + width(actions);
     actions += `${editor.active === editor.fields.length + index ? theme.sidebarSelBg : theme.appBg}${index === 0 ? theme.accent + theme.bold : theme.muted}${text}${theme.reset}  `;
-    state.layout.actions.push({ action: index === 0 ? "save" : "cancel", left: actionLeft, right: actionLeft + width(text) - 1, row: errorRow + 2 });
+    state.layout.actions.push({ action: index === 0 ? "save" : "cancel", left: actionLeft, right: actionLeft + width(text) - 1, row: actionsRow + 1 });
   }
-  put(errorRow + 1, framedOverlayRow(actions, boxWidth));
-  put(errorRow + 2, `${theme.borderFocused}└${"─".repeat(boxWidth - 2)}┘`);
+  if (!errorRows && editor.error) actions += `${theme.error}${truncate(editor.error, Math.max(0, boxWidth - 3 - width(actions)))}`;
+  put(actionsRow, framedOverlayRow(actions, boxWidth));
+  put(actionsRow + 1, `${theme.borderFocused}└${"─".repeat(boxWidth - 2)}┘`);
   return cursor;
 }
 
@@ -363,7 +366,7 @@ function renderPromptSeparator(state: AppState, borderColor: string): string {
 }
 
 function promptRendering(state: AppState): { line: string; cursor: { row: number; col: number } | null } {
-  const row = state.rows - STATUSLINE_HEIGHT;
+  const row = state.rows - STATUSLINE_HEIGHT - 1;
   if (!state.prompt) {
     const pending = state.pendingKeys ? ` ${theme.warning}${state.pendingKeys}` : "";
     return { line: segment(`${theme.vimNormal} N ${theme.text}❯${pending}`, state.cols), cursor: null };
@@ -391,10 +394,10 @@ function renderCompletion(state: AppState, rows: string[]): void {
   refreshCompletion(state.prompt, state);
   const menu = state.prompt.completion;
   if (!menu) return;
-  const capacity = Math.min(6, menu.items.length, state.rows - STATUSLINE_HEIGHT - 8);
+  const capacity = Math.min(6, menu.items.length, state.rows - STATUSLINE_HEIGHT - 9);
   const start = Math.max(0, Math.min(menu.selection - capacity + 1, menu.items.length - capacity));
   const boxWidth = Math.min(78, state.cols - 8), left = 5;
-  const top = state.rows - STATUSLINE_HEIGHT - 4 - capacity;
+  const top = state.rows - STATUSLINE_HEIGHT - 5 - capacity;
   putOverlayRow(rows, top, left, boxWidth, titledOverlayBorder("Suggestions", boxWidth));
   for (let i = 0; i < capacity; i++) {
     const index = start + i, item = menu.items[index]!;
@@ -415,7 +418,7 @@ export function buildFrame(state: AppState): { rows: string[]; cursor: string } 
     return { rows, cursor: cursorAt(1, 1, cursorBlock, false) };
   }
   rows[0] = renderTopbar(state);
-  const footerTop = Math.max(3, state.rows - STATUSLINE_HEIGHT - 1);
+  const footerTop = Math.max(3, state.rows - STATUSLINE_HEIGHT - 2);
   const bodyTop = 3;
   const bodyHeight = Math.max(0, footerTop - bodyTop);
   const sidebarWidth = state.sidebarOpen && state.cols >= 76 ? Math.min(31, Math.floor(state.cols * 0.32)) : 0;
@@ -430,8 +433,9 @@ export function buildFrame(state: AppState): { rows: string[]; cursor: string } 
 
   const prompt = promptRendering(state);
   const borderColor = state.focus === "calendar" ? theme.borderFocused : theme.borderUnfocused;
-  rows[state.rows - STATUSLINE_HEIGHT - 2] = renderPromptSeparator(state, borderColor);
-  rows[state.rows - STATUSLINE_HEIGHT - 1] = prompt.line;
+  rows[state.rows - STATUSLINE_HEIGHT - 3] = renderPromptSeparator(state, borderColor);
+  rows[state.rows - STATUSLINE_HEIGHT - 2] = prompt.line;
+  rows[state.rows - STATUSLINE_HEIGHT - 1] = segment(`${borderColor}${"─".repeat(state.cols)}`, state.cols);
   for (const [index, line] of renderStatusline(state).entries()) rows[state.rows - STATUSLINE_HEIGHT + index] = line;
 
   let overlayCursor: { row: number; col: number } | null = null;

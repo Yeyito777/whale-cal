@@ -66,7 +66,9 @@ describe("calendar layouts", () => {
       expect(screen.join("\n")).toContain("Save");
       expect(screen.at(-2)).toContain("Next Event:");
       expect(screen.at(-1)).toContain("Happens in:");
-      expect(screen.at(-3)).toContain("❯");
+      expect(screen.at(-3)).toBe("─".repeat(cols));
+      expect(screen.at(-4)).toContain("❯");
+      expect(screen.at(-5)).toBe("─".repeat(cols));
       expect(state.layout.actions.some(hit => hit.action === "save")).toBe(true);
       expect(state.layout.editorFields.every(hit => hit.row < rows - 1)).toBe(true);
       expect(frame.cursor).toContain("H");
