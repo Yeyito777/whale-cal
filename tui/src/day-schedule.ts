@@ -14,16 +14,16 @@ export function durationLabel(minutes: number): string {
 }
 
 /** Full local wall-clock day, using only the visible occurrences supplied by the caller.
- * All-day entries are date markers, not timed reservations. A timed event with
- * an unspecified end conservatively blocks the remaining day rather than
- * inventing availability. Occurrences may span days.
+ * Only explicit start/end times reserve time. All-day entries and entries with
+ * no end time remain markers; never invent a duration. The UI calls out missing
+ * end times so these gaps aren't mistaken for fully confirmed availability.
  */
 export function daySchedule(occurrences: readonly EventOccurrence[], date: DateKey): { rows: ScheduleRow[]; freeMinutes: number } {
   const events = occurrences.map((occurrence, eventIndex) => {
     const { event } = occurrence;
     const allDay = !event.startTime;
     const start = allDay || occurrence.startDate < date ? 0 : minute(event.startTime!);
-    const end = allDay ? 0 : occurrence.endDate > date || !event.endTime ? 1440 : minute(event.endTime);
+    const end = allDay || !event.endTime ? start : occurrence.endDate > date ? 1440 : minute(event.endTime);
     const time = allDay ? "all-day" : !event.endTime ? `${clock(start)}–?` : range(start, end);
     return { eventIndex, start, end, time };
   }).sort((a, b) => a.start - b.start || a.eventIndex - b.eventIndex);

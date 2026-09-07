@@ -260,6 +260,8 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
   const range = schedule.rows.length > capacity ? ` · ${start + 1}–${Math.min(schedule.rows.length, start + capacity)} / ${schedule.rows.length}` : "";
   putList(1, `${theme.muted} ${occurrences.length} event${occurrences.length === 1 ? "" : "s"} · ${durationLabel(schedule.freeMinutes)} free${range}`);
   if (!occurrences.length) putList(2, `${theme.muted} Nothing scheduled. A little breathing room.`);
+  const missingEnds = occurrences.filter(({ event }) => event.startTime && !event.endTime).length;
+  if (missingEnds) putList(2, `${theme.muted} ${missingEnds} missing end time${missingEnds === 1 ? "" : "s"} · excluded from free-time total`);
   for (let i = start; i < Math.min(schedule.rows.length, start + capacity); i++) {
     const item = schedule.rows[i]!;
     const row = 3 + i - start;
@@ -286,6 +288,7 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
     add(event.title, theme.bold + theme.text);
     details.push(theme.boldOff);
     add(`${formatEventTime(event)}  ·  ${selected.startDate === selected.endDate ? selected.startDate : selected.startDate + " — " + selected.endDate}`);
+    if (event.startTime && !event.endTime) add("End time not set; no duration reserved in the free-time calculation.", theme.muted);
     add(`● ${calendar?.name ?? "Unknown calendar"}`, eventColor(calendar?.color ?? "#1d9bf0"));
     if (event.location) { details.push(""); add("Location", theme.muted); add(event.location); }
     const recurrence = recurrenceLabel(selected);

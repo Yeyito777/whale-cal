@@ -28,15 +28,59 @@ test("overlapping, nested and adjacent events never create false gaps or double-
   expect(result.rows.filter(r => r.kind === "event")).toHaveLength(4);
 });
 
-test("all-day markers remain visible without reserving time; unknown timed durations remain conservative", () => {
+test("all-day and missing-end markers remain visible without inventing busy time", () => {
   expect(schedule([])).toEqual({ rows: [{ kind: "free", start: 0, end: 1440, time: "00:00–24:00" }], freeMinutes: 1440 });
   const allDay = schedule([event("Due today")]);
   expect(allDay.freeMinutes).toBe(1440);
   expect(allDay.rows[0]).toMatchObject({ kind: "event", eventIndex: 0, time: "all-day" });
   expect(allDay.rows[1]).toMatchObject({ kind: "free", time: "00:00–24:00" });
   const unknown = schedule([event("Open-ended", "10:00"), event("Later", "12:00", "13:00")]);
-  expect(unknown.freeMinutes).toBe(600);
+  expect(unknown.freeMinutes).toBe(23 * 60);
   expect(unknown.rows[1]).toMatchObject({ kind: "event", time: "10:00–?" });
+  expect(unknown.rows.filter(r => r.kind === "free").map(r => r.time)).toEqual(["00:00–10:00", "10:00–12:00", "13:00–24:00"]);
+});
+
+test("September 14: a start-only deadline cannot swallow gaps after overlapping classes", () => {
+  const result = schedule([
+    event("Weekly prep due", "09:00"), event("Lecture", "10:10", "11:00"),
+    event("VIC163", "11:00", "13:00"), event("Study", "11:30", "12:15"),
+    event("Seminar", "13:00", "15:00"), event("Tutorial", "14:00", "15:00"),
+    event("Practice", "16:00", "17:30"),
+  ]);
+  expect(result.freeMinutes).toBe(1060);
+  expect(result.rows.filter(r => r.kind === "free").map(r => r.time)).toEqual([
+    "00:00–09:00", "09:00–10:10", "15:00–16:00", "17:30–24:00",
+  ]);
+  expect(result.rows.filter(r => r.kind === "event")).toHaveLength(7);
+});
+
+test("missing ends never introduce fake overnight reservations or double-count gaps", () => {
+  const markers = [event("A", "09:00"), event("B", "09:00"), event("C", "23:55")];
+  expect(schedule(markers).freeMinutes).toBe(1440);
+  expect(schedule([event("Ongoing", "22:00", undefined, { startDate: "2026-09-10", endDate: "2026-09-12" })]).freeMinutes).toBe(1440);
+});
+
+test("free minutes equal the complement of explicit reservations across mixed schedules", () => {
+  let seed = 14;
+  const random = () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed; };
+  const time = (m: number) => `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
+  for (let sample = 0; sample < 30; sample++) {
+    const busy = Array<boolean>(1440).fill(false);
+    const events: CalendarEvent[] = [];
+    for (let i = 0; i < 15; i++) {
+      const start = random() % 1439, end = start + 1 + random() % (1439 - start);
+      const kind = random() % 3;
+      events.push(event(String(i), kind === 0 ? undefined : time(start), kind === 2 ? time(end) : undefined));
+      if (kind === 2) busy.fill(true, start, end);
+    }
+    const result = schedule(events);
+    expect(result.freeMinutes).toBe(busy.filter(value => !value).length);
+    const painted = Array<number>(1440).fill(0);
+    for (const row of result.rows) if (row.kind === "free") {
+      for (let minute = row.start; minute < row.end; minute++) painted[minute]!++;
+    }
+    expect(painted.every((count, minute) => count === (busy[minute] ? 0 : 1))).toBe(true);
+  }
 });
 
 test("an all-day deadline cannot hide the gaps between classes and meetings", () => {
@@ -114,4 +158,10 @@ test("day render includes gaps, keeps them non-editable, and ignores hidden cale
   expect(withReminder).toContain("22h free");
   expect(withReminder).toContain("11:00–13:00");
   expect(withReminder).toContain("All-day deadline");
+  state.database.events.push(event("End unspecified", "09:00"));
+  const withMissingEnd = buildFrame(state).rows.map(stripAnsi).join("\n");
+  expect(withMissingEnd).toContain("22h free");
+  expect(withMissingEnd).toContain("1 missing end time");
+  expect(withMissingEnd).toContain("excluded from free-time total");
+  expect(withMissingEnd).toContain("11:00–13:00");
 });
