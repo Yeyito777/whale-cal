@@ -52,6 +52,7 @@ test("mouse targets align with the borderless menu while the footer remains inta
   state.cols = 80; state.rows = 24;
   state.notice = null;
   state.prompt = { text: "/", cursor: 1, mode: "insert" };
+  state.mainFocus = "prompt";
   const frame = buildFrame(state);
   const hits = state.layout.actions.filter(hit => hit.action.startsWith("complete:"));
   expect(hits).toHaveLength(10);

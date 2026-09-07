@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { createEditor, createState, editorDraft, settleEditorSave, type EditorState } from "./state";
 import { inputWindow, width, wrapText } from "./text";
+import { focusPrompt } from "./focus";
 
 function fixture() {
   const state = createState();
@@ -29,6 +30,7 @@ test("editor validates dates and times before sending a save", () => {
 
 test("only an acknowledged editor save closes the draft and opens the saved day", () => {
   const state = fixture();
+  focusPrompt(state, "/search unfinished");
   const event = { ...editorDraft(state, state.editor!), calendarId: "personal", endDate: "2026-09-15", id: "saved", createdAt: "", updatedAt: "" };
   state.database.events.push(event);
   state.editor!.saving = "request-1";
@@ -38,6 +40,9 @@ test("only an acknowledged editor save closes the draft and opens the saved day"
   expect(state.editor).toBeNull();
   expect(state.dayOpen).toBe(true);
   expect(state.selectedEventIndex).toBe(0);
+  expect(state.mainFocus).toBe("calendar");
+  expect(state.focus).toBe("calendar");
+  expect(state.prompt!.text).toBe("/search unfinished");
 });
 
 test("editing a recurring event keeps the inspected occurrence date", () => {

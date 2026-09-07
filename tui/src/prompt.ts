@@ -4,7 +4,7 @@ import { cycleCompletion, refreshCompletion } from "./completion";
 import { nextGrapheme, previousGrapheme } from "./text";
 
 type Snapshot = { text: string; cursor: number };
-interface Memory { undo: Snapshot[]; redo: Snapshot[]; pending: string; count: string; operatorCount?: number; historyIndex: number; draft: string }
+interface Memory { undo: Snapshot[]; redo: Snapshot[]; pending: string; count: string; operatorCount?: number; historyIndex: number; draft: string; focusEpoch?: number }
 
 /** Single-line command editing. History and the yank register last for this TUI session. */
 export class PromptController {
@@ -15,6 +15,9 @@ export class PromptController {
   handle(p: PromptState, key: KeyEvent, state: AppState): "handled" | "submit" | "close" {
     let m = this.memories.get(p);
     if (!m) { m = { undo: [], redo: [], pending: "", count: "", historyIndex: this.history.length, draft: p.text }; this.memories.set(p, m); }
+    if (m.focusEpoch !== p.focusEpoch) {
+      m.pending = ""; m.count = ""; m.operatorCount = undefined; m.focusEpoch = p.focusEpoch;
+    }
     refreshCompletion(p, state);
     const before = { text: p.text, cursor: p.cursor };
     const finish = () => {
@@ -42,9 +45,9 @@ export class PromptController {
       else return "close";
       return "handled";
     }
-    if (["up", "down", "ctrl-p", "ctrl-n"].includes(key.type)) {
+    if (["up", "down"].includes(key.type)) {
       if (m.historyIndex === this.history.length) m.draft = p.text;
-      const backward = key.type === "up" || key.type === "ctrl-p";
+      const backward = key.type === "up";
       m.historyIndex = Math.max(0, Math.min(this.history.length, m.historyIndex + (backward ? -1 : 1)));
       p.text = this.history[m.historyIndex] ?? m.draft; p.cursor = p.text.length;
       p.completion = null; p.completionText = p.text; p.completionCursor = p.cursor;
@@ -70,7 +73,6 @@ export class PromptController {
         case "delete": remove(p.cursor, nextGrapheme(p.text, p.cursor), false); break;
         case "ctrl-w": remove(wordBack(p.cursor), p.cursor); break;
         case "ctrl-u": remove(0, p.cursor); break;
-        case "ctrl-k": remove(p.cursor, p.text.length); break;
         case "ctrl-y": insert(this.register); break;
       }
       return finish();

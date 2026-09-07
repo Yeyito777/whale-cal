@@ -3,6 +3,7 @@ import type { CalendarEvent, CalendarView, EventDraft, EventPatch } from "@whale
 import { DaemonClient, type ClientEvent } from "./client";
 import { runCommand, type CommandAction } from "./commands";
 import { PromptController } from "./prompt";
+import { focusCalendar, focusPrompt, focusSidebar, handleFocusKey, isPromptFocused } from "./focus";
 import { STATUSLINE_HEIGHT } from "./statusline";
 import { cycleCompletion } from "./completion";
 import { invalidateFrame } from "./frame";
@@ -10,7 +11,7 @@ import { InputBuffer, parseInput, type KeyEvent, type MouseEvent } from "./input
 import { loadPreferences, savePreferences } from "./preferences";
 import { render } from "./render";
 import {
-  createEditor, createState, cyclePanelFocus, editorDraft, eventsOnSelectedDate, exitPromptAndCycleFocus,
+  createEditor, createState, editorDraft, eventsOnSelectedDate,
   moveDate, selectDate, selectedCalendar, selectedOccurrence, setNotice, settleEditorSave, syncEditorDates, type AppState, type EditorState,
 } from "./state";
 import {
@@ -161,14 +162,12 @@ function scheduleReconnect(): void {
 function openNewEditor(): void {
   if (state.database.calendars.length === 0) { notice("No calendar is available.", "error"); return; }
   state.editor = createEditor(state);
-  state.prompt = null;
 }
 
 function editSelected(): void {
   const occurrence = selectedOccurrence(state);
   if (!occurrence) { openNewEditor(); return; }
   state.editor = createEditor(state, occurrence.event);
-  state.prompt = null;
 }
 
 function confirmDelete(): void {
@@ -331,16 +330,13 @@ function handleEditorKey(key: KeyEvent): void {
 
 function handlePromptKey(key: KeyEvent): void {
   const prompt = state.prompt!;
-  if (prompt.mode === "normal" && (key.type === "ctrl-j" || key.type === "ctrl-k")) {
-    exitPromptAndCycleFocus(state);
-    return;
-  }
   const result = promptController.handle(prompt, key, state);
   if (result === "submit") {
     const text = prompt.text;
     state.prompt = null;
+    focusCalendar(state);
     execute(runCommand(text, state));
-  } else if (result === "close") state.prompt = null;
+  } else if (result === "close") focusCalendar(state);
 }
 
 function moveSelectedEvent(amount: number): void {
@@ -374,13 +370,18 @@ function handleDayKey(key: KeyEvent): void {
     case "n": case "a": openNewEditor(); return;
     case "e": if (selectedOccurrence(state)) editSelected(); return;
     case "d": confirmDelete(); return;
-    case "/": case ":": state.prompt = { text: "/", cursor: 1, mode: "insert" }; return;
+    case "/": case ":": focusPrompt(state, "/"); return;
+    case "i": focusPrompt(state); return;
     case "?": state.helpOpen = true; return;
     case "q": state.dayOpen = false; return;
   }
 }
 
 function handleNormalKey(key: KeyEvent): void {
+  if (state.focus === "sidebar" && (key.type === "left" || key.type === "right")) {
+    if (key.type === "right") focusCalendar(state);
+    return;
+  }
   if (state.focus === "sidebar" && (key.type === "up" || key.type === "down")) {
     state.selectedCalendarIndex = Math.max(0, Math.min(state.database.calendars.length - 1, state.selectedCalendarIndex + (key.type === "up" ? -1 : 1)));
     return;
@@ -389,13 +390,8 @@ function handleNormalKey(key: KeyEvent): void {
   if (key.type === "right") { moveDate(state, 1); return; }
   if (key.type === "up") { moveDate(state, -7); return; }
   if (key.type === "down") { moveDate(state, 7); return; }
-  if (key.type === "ctrl-s") { state.sidebarOpen = !state.sidebarOpen; if (!state.sidebarOpen) state.focus = "calendar"; return; }
-  if (key.type === "ctrl-j" || key.type === "ctrl-k") {
-    cyclePanelFocus(state);
-    return;
-  }
-  if (key.type === "ctrl-n" || key.type === "ctrl-f") { selectDate(state, addMonths(state.selectedDate, 1)); return; }
-  if (key.type === "ctrl-p" || key.type === "ctrl-b") { selectDate(state, addMonths(state.selectedDate, -1)); return; }
+  if (key.type === "ctrl-f") { selectDate(state, addMonths(state.selectedDate, 1)); return; }
+  if (key.type === "ctrl-b") { selectDate(state, addMonths(state.selectedDate, -1)); return; }
   if (key.type !== "char" && key.type !== "enter") return;
   const char = key.type === "enter" ? "enter" : key.char!;
   if (state.focus === "sidebar") {
@@ -404,8 +400,9 @@ function handleNormalKey(key: KeyEvent): void {
     else if (char === "enter" || char === " ") {
       const calendar = selectedCalendar(state);
       if (calendar) track(client.updateCalendar(calendar.id, { visible: !calendar.visible }), `${calendar.visible ? "Hid" : "Showed"} “${calendar.name}”.`);
-    } else if (char === "l" || char === "i" || char === "a") state.focus = "calendar";
-    else if (char === "/") state.prompt = { text: "/", cursor: 1, mode: "insert" };
+    } else if (char === "l") focusCalendar(state);
+    else if (char === "i" || char === "a") focusPrompt(state);
+    else if (char === "/" || char === ":") focusPrompt(state, "/");
     else if (char === "q") cleanup();
     return;
   }
@@ -429,8 +426,8 @@ function handleNormalKey(key: KeyEvent): void {
     case "enter": state.dayOpen = true; return;
     case "d": confirmDelete(); return;
     case "v": cycleView(); return;
-    case "/": case ":": state.prompt = { text: "/", cursor: 1, mode: "insert" }; return;
-    case "i": state.prompt = { text: "", cursor: 0, mode: "insert" }; return;
+    case "/": case ":": focusPrompt(state, "/"); return;
+    case "i": focusPrompt(state); return;
     case "?": state.helpOpen = true; return;
     case "q": cleanup(); return;
   }
@@ -453,15 +450,32 @@ function handleKey(key: KeyEvent): void {
   } else if (state.helpOpen) {
     if (key.type === "escape" || (key.type === "char" && (key.char === "?" || key.char === "q"))) state.helpOpen = false;
   } else if (state.editor) handleEditorKey(key);
-  else if (state.prompt) handlePromptKey(key);
-  else if (state.dayOpen) handleDayKey(key);
-  else handleNormalKey(key);
+  else {
+    const result = handleFocusKey(state, key);
+    if (result === "new") openNewEditor();
+    else if (result !== "handled") {
+      if (isPromptFocused(state)) handlePromptKey(key);
+      else if (state.dayOpen && state.focus === "calendar") handleDayKey(key);
+      else handleNormalKey(key);
+    }
+  }
+  scheduleRender();
+}
+
+function clickPrompt(col: number): void {
+  focusPrompt(state);
+  const prompt = state.prompt!;
+  const window = inputWindow(prompt.text, prompt.cursor, state.cols - 5);
+  let position = window.start;
+  while (position < prompt.text.length && width(prompt.text.slice(window.start, nextGrapheme(prompt.text, position))) <= col - 6) position = nextGrapheme(prompt.text, position);
+  prompt.cursor = position;
+  prompt.selectionAnchor = undefined;
   scheduleRender();
 }
 
 function handleMouse(event: MouseEvent): void {
   if (state.helpOpen) return;
-  if (state.prompt) {
+  if (isPromptFocused(state) && !state.editor && !state.confirmDelete) {
     if (state.prompt.completion && (event.button === 64 || event.button === 65)) {
       cycleCompletion(state.prompt, event.button === 64 ? -1 : 1);
       scheduleRender(); return;
@@ -475,15 +489,12 @@ function handleMouse(event: MouseEvent): void {
         cycleCompletion(prompt, 1);
         prompt.completion = null;
         scheduleRender();
+        return;
       } else if (event.row === state.rows - STATUSLINE_HEIGHT - 1) {
-        const window = inputWindow(prompt.text, prompt.cursor, state.cols - 5);
-        let position = window.start;
-        while (position < prompt.text.length && width(prompt.text.slice(window.start, nextGrapheme(prompt.text, position))) <= event.col - 6) position = nextGrapheme(prompt.text, position);
-        prompt.cursor = position; prompt.selectionAnchor = undefined;
-        scheduleRender();
+        clickPrompt(event.col);
+        return;
       }
     }
-    return;
   }
   if (state.confirmDelete) {
     if (event.action === "press" && event.button === 0) {
@@ -516,8 +527,26 @@ function handleMouse(event: MouseEvent): void {
   }
   if (event.action === "press" && event.button === 0) {
     if (event.row === state.rows - STATUSLINE_HEIGHT - 1) {
-      state.prompt = { text: "", cursor: 0, mode: "insert" };
+      clickPrompt(event.col); return;
+    }
+    const calendarHit = state.layout.calendarRows.find(hit => hit.row === event.row && event.col <= state.layout.sidebarWidth);
+    if (calendarHit) {
+      const index = state.database.calendars.findIndex(calendar => calendar.id === calendarHit.calendarId);
+      if (index !== -1) {
+        state.selectedCalendarIndex = index;
+        focusSidebar(state);
+        if (event.col <= 3) {
+          const calendar = state.database.calendars[index]!;
+          track(client.updateCalendar(calendar.id, { visible: !calendar.visible }), `${calendar.visible ? "Hid" : "Showed"} “${calendar.name}”.`);
+        }
+      }
       scheduleRender(); return;
+    }
+    if (event.col < state.layout.mainLeft && event.row >= state.layout.bodyTop && event.row <= state.layout.bodyBottom) {
+      focusSidebar(state); scheduleRender(); return;
+    }
+    if (event.col >= state.layout.mainLeft && event.row < state.rows - STATUSLINE_HEIGHT - 2) {
+      focusCalendar(state); scheduleRender();
     }
     const hit = state.layout.actions.find(hit => hit.row === event.row && event.col >= hit.left && event.col <= hit.right);
     if (hit) {
@@ -537,6 +566,10 @@ function handleMouse(event: MouseEvent): void {
       }
       scheduleRender(); return;
     }
+  }
+  if ((event.button === 64 || event.button === 65) && event.col < state.layout.mainLeft) {
+    state.selectedCalendarIndex = Math.max(0, Math.min(state.database.calendars.length - 1, state.selectedCalendarIndex + (event.button === 64 ? -1 : 1)));
+    scheduleRender(); return;
   }
   if (state.dayOpen) {
     if (event.button === 64 || event.button === 65) {
@@ -558,23 +591,11 @@ function handleMouse(event: MouseEvent): void {
     state.selectedEventIndex = Math.max(0, eventsOnSelectedDate(state).findIndex(item => item.event.id === eventHit.eventId));
     state.dayOpen = true; scheduleRender(); return;
   }
-  const calendarHit = state.layout.calendarRows.find(hit => hit.row === event.row && event.col <= state.layout.sidebarWidth);
-  if (calendarHit) {
-    const index = state.database.calendars.findIndex(calendar => calendar.id === calendarHit.calendarId);
-    if (index !== -1) {
-      state.selectedCalendarIndex = index; state.focus = "sidebar";
-      if (event.col <= 3) {
-        const calendar = state.database.calendars[index]!;
-        track(client.updateCalendar(calendar.id, { visible: !calendar.visible }), `${calendar.visible ? "Hid" : "Showed"} “${calendar.name}”.`);
-      }
-    }
-    scheduleRender(); return;
-  }
   const cell = state.layout.monthCells.find(hit => event.row >= hit.top && event.row <= hit.bottom && event.col >= hit.left && event.col <= hit.right);
   if (cell) {
     if (cell.date === state.selectedDate) state.dayOpen = true;
     else selectDate(state, cell.date);
-    state.focus = "calendar"; scheduleRender();
+    focusCalendar(state); scheduleRender();
   }
 }
 

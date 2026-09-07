@@ -4,6 +4,7 @@ import {
 } from "@whale-cal/shared/dates";
 import type { Calendar, DateKey, EventOccurrence } from "@whale-cal/shared/types";
 import { COMMANDS } from "./commands";
+import { isPromptFocused } from "./focus";
 import { refreshCompletion } from "./completion";
 import { completionMenu } from "./completion-menu";
 import { renderStatusline, STATUSLINE_HEIGHT } from "./statusline";
@@ -323,7 +324,8 @@ function renderHelpOverlay(state: AppState, rows: string[]): void {
     ["Enter", "open selected day"], ["n / a", "new event"], ["e", "edit selected event"],
     ["d", "delete selected event"], ["J / K", "next / previous event"], ["v", "cycle view"],
     ["/", "open command prompt"],
-    ["Ctrl+J/K", "cycle panel focus"], ["Ctrl+S", "toggle sidebar"], ["Ctrl+Shift+R", "restart cald"],
+    ["Ctrl+J/K", "sidebar / main panel"], ["Ctrl+N", "calendar / prompt"],
+    ["Ctrl+P", "new event"], ["Ctrl+S", "toggle sidebar"], ["Ctrl+Shift+R", "restart cald"],
     ["q / Ctrl+C", "quit"],
   ];
   const boxWidth = Math.max(48, Math.min(68, state.cols - 4));
@@ -386,12 +388,12 @@ function promptRendering(state: AppState): { line: string; cursor: { row: number
   }
   return {
     line: segment(`${modeColor} ${modeLabel} ${theme.text}❯ ${theme.command}${shown}`, state.cols),
-    cursor: { row, col: width(prefix) + window.column + 1 },
+    cursor: isPromptFocused(state) && !state.editor && !state.helpOpen && !state.confirmDelete ? { row, col: width(prefix) + window.column + 1 } : null,
   };
 }
 
 function renderCompletion(state: AppState, rows: string[]): void {
-  if (!state.prompt || state.editor || state.helpOpen || state.confirmDelete) return;
+  if (!isPromptFocused(state) || !state.prompt || state.editor || state.helpOpen || state.confirmDelete) return;
   refreshCompletion(state.prompt, state);
   const menu = state.prompt.completion;
   if (!menu) return;
@@ -404,6 +406,7 @@ function renderCompletion(state: AppState, rows: string[]): void {
 }
 
 export function buildFrame(state: AppState): { rows: string[]; cursor: string } {
+  if (state.focus === "sidebar" && (!state.sidebarOpen || state.cols < 76)) state.focus = "calendar";
   const rows = Array.from({ length: state.rows }, () => segment("", state.cols));
   if (state.cols < 54 || state.rows < 18) {
     rows[Math.floor(state.rows / 2)] = segment(`${theme.muted}${truncate("Resize terminal to at least 54 × 18", state.cols)}`, state.cols);

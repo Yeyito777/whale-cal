@@ -9,6 +9,7 @@ function editor(text: string, mode: "normal" | "insert" = "insert") {
   const state = createState();
   const p: PromptState = { text, cursor: mode === "insert" ? text.length : 0, mode };
   state.prompt = p;
+  state.mainFocus = "prompt";
   const controller = new PromptController();
   const key = (type: KeyType) => controller.handle(p, { type }, state);
   const chars = (text: string) => { for (const char of text) controller.handle(p, { type: "char", char }, state); };
@@ -48,9 +49,9 @@ test("history restores an unfinished draft and is distinct from popup selection"
   const { p, key, controller, state } = editor("/today");
   key("enter");
   const draft: PromptState = { text: "/search unfinished", cursor: 18, mode: "insert" };
-  controller.handle(draft, { type: "ctrl-p" }, state);
+  controller.handle(draft, { type: "up" }, state);
   expect(draft.text).toBe(p.text);
-  controller.handle(draft, { type: "ctrl-n" }, state);
+  controller.handle(draft, { type: "down" }, state);
   expect(draft.text).toBe("/search unfinished");
 });
 
@@ -73,7 +74,7 @@ test("insert line/word deletion and yank restore work with Unicode", () => {
   const { p, key } = editor("hello 東京");
   key("ctrl-w"); expect(p.text).toBe("hello ");
   key("ctrl-y"); expect(p.text).toBe("hello 東京");
-  key("ctrl-a"); key("ctrl-k"); expect(p.text).toBe("");
+  key("ctrl-e"); key("ctrl-u"); expect(p.text).toBe("");
   key("ctrl-y"); expect(p.text).toBe("hello 東京");
 });
 

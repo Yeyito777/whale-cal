@@ -66,8 +66,10 @@ current GUI launchd domain when available and starts automatically at login.
 | `v` | cycle month, week, and agenda views |
 | `g g` | jump to today |
 | `/` | command prompt (`/help` lists commands) |
-| `Ctrl+J` / `Ctrl+K` | cycle panel focus |
-| `Ctrl+S` | toggle sidebar |
+| `Ctrl+J` / `Ctrl+K` | switch sidebar / main panel (not prompt / calendar) |
+| `Ctrl+N` | switch calendar / prompt; from sidebar, focus calendar |
+| `Ctrl+S` | toggle sidebar, including while typing in the prompt |
+| `Ctrl+P` / `Ctrl+Shift+O` | new event from any non-modal surface |
 | `Ctrl+Shift+R` | restart the connected daemon |
 | `Ctrl+C` or `/quit` | quit the TUI (daemon stays alive) |
 
@@ -109,10 +111,18 @@ an accent selection marker, and small scroll arrows instead of a title or counte
 The single-line prompt supports insert/normal modes, character and word motions,
 counts, `d`/`c`/`y` operators, word and simple delimiter text objects, `f`/`t`
 find motions, `r` replacement, visual selection, yank/paste, and undo/redo.
-Insert mode supports Ctrl+A/E, Ctrl+W/U/K deletion, and Ctrl+Y yank-back.
-Ctrl+P/N browses session command history and restores unfinished input; Up/Down
-does the same when no popup is open. Ctrl+J/K still changes panel focus from
-normal mode. The yank register and history belong to the current TUI session.
+Insert mode supports Ctrl+A/E, Ctrl+W/U deletion, and Ctrl+Y yank-back.
+Up/Down browses session command history and restores unfinished input when no
+popup is open. Ctrl+N switches between the calendar and prompt (returning to
+insert mode); `i` or clicking the prompt also resumes the draft. Ctrl+J/K switches
+only the sidebar/main panel, preserving the main panel's inner focus. With the
+sidebar closed it does nothing. Ctrl+S opens and focuses the sidebar or closes
+it and returns to the main panel. Leaving the prompt preserves its text, cursor,
+and undo history, closes completions, and enters normal mode. These shortcuts
+work in both prompt modes and in the day view. Pasting from a browsing surface
+inserts into the prompt draft. Event dialogs retain their own keys, including
+Ctrl+S to save; they cannot be bypassed by focus shortcuts. The yank register
+and history belong to the current TUI session.
 
 The prompt is framed by matching horizontal separators above and below it.
 Below the bottom separator, an Exocortex-style two-line status block shows `Next Event:`

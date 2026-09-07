@@ -1,5 +1,6 @@
 import { addDays, isDateKey, isTimeKey, occurrencesOnDate, todayKey } from "@whale-cal/shared/dates";
 import type { Calendar, CalendarDatabase, CalendarEvent, CalendarView, DateKey, EventDraft, EventOccurrence, RecurrenceRule } from "@whale-cal/shared/types";
+import { focusCalendar } from "./focus";
 
 export type Focus = "calendar" | "sidebar";
 export type VimMode = "normal" | "insert";
@@ -10,6 +11,7 @@ export interface PromptState {
   completionText?: string;
   completionCursor?: number;
   selectionAnchor?: number;
+  focusEpoch?: number;
 }
 
 export type EditorFieldKey = "title" | "startDate" | "endDate" | "startTime" | "endTime" | "calendar" | "location" | "repeat" | "notes";
@@ -51,6 +53,7 @@ export interface AppState {
   selectedCalendarIndex: number;
   view: CalendarView;
   focus: Focus;
+  mainFocus: "calendar" | "prompt";
   sidebarOpen: boolean;
   prompt: PromptState | null;
   editor: EditorState | null;
@@ -74,7 +77,7 @@ export function emptyDatabase(): CalendarDatabase {
 export function createState(): AppState {
   return {
     database: emptyDatabase(), selectedDate: todayKey(), selectedEventIndex: 0, selectedCalendarIndex: 0,
-    view: "month", focus: "calendar", sidebarOpen: false, prompt: null, editor: null, confirmDelete: null,
+    view: "month", focus: "calendar", mainFocus: "calendar", sidebarOpen: false, prompt: null, editor: null, confirmDelete: null,
     dayOpen: false, detailScroll: 0, helpOpen: false, notice: { text: "Connecting to cald…", kind: "info", at: Date.now() }, remoteAlias: null,
     connected: false, cols: process.stdout.columns || 100, rows: process.stdout.rows || 30, pendingKeys: "",
     layout: { sidebarWidth: 0, calendarRows: [], monthCells: [], mainLeft: 1, bodyTop: 2, bodyBottom: 20, actions: [], eventRows: [], editorFields: [] },
@@ -104,15 +107,6 @@ export function selectDate(state: AppState, key: DateKey): void {
 }
 
 export function moveDate(state: AppState, days: number): void { selectDate(state, addDays(state.selectedDate, days)); }
-
-export function cyclePanelFocus(state: AppState): void {
-  if (state.sidebarOpen && state.cols >= 76) state.focus = state.focus === "calendar" ? "sidebar" : "calendar";
-}
-
-export function exitPromptAndCycleFocus(state: AppState): void {
-  state.prompt = null;
-  cyclePanelFocus(state);
-}
 
 export function selectedCalendar(state: AppState): Calendar | null {
   if (state.database.calendars.length === 0) return null;
@@ -210,6 +204,7 @@ export function settleEditorSave(state: AppState, reqId: string, event: Calendar
   if (state.editor?.saving !== reqId) return;
   selectDate(state, state.editor.saveDate ?? event.startDate);
   state.editor = null;
+  focusCalendar(state);
   state.dayOpen = true;
   state.selectedEventIndex = Math.max(0, eventsOnSelectedDate(state).findIndex(item => item.event.id === event.id));
 }
