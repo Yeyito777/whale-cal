@@ -16,6 +16,35 @@ function store(): { store: CalendarStore; path: string } {
 }
 
 describe("CalendarStore", () => {
+  test("deadlines persist a type and due point but reject durations and unknown types", () => {
+    const instance = store();
+    const due = instance.store.createEvent({ kind: "deadline", title: "Quiz due", startDate: "2026-09-09", startTime: "15:05" });
+    expect(due.kind).toBe("deadline");
+    expect(due.endDate).toBe(due.startDate);
+    expect(due.endTime).toBeUndefined();
+    expect(new CalendarStore(instance.path).snapshot().events[0]!.kind).toBe("deadline");
+    expect(() => instance.store.createEvent({ kind: "deadline", title: "Bad", startDate: "2026-09-09", startTime: "15:00", endTime: "16:00" })).toThrow("duration");
+    expect(() => instance.store.createEvent({ kind: "deadline", title: "Bad", startDate: "2026-09-09", endDate: "2026-09-10" })).toThrow("duration");
+    expect(() => instance.store.createEvent({ kind: "task" as "event", title: "Bad", startDate: "2026-09-09" })).toThrow("Type");
+    expect(instance.store.createEvent({ title: "Legacy-style", startDate: "2026-09-09" }).kind).toBe("event");
+  });
+
+  test("type conversion preserves identity, completion, recurrence and notes without retaining a duration", () => {
+    const instance = store();
+    const event = instance.store.createEvent({ title: "Task", startDate: "2026-09-09", endDate: "2026-09-10", startTime: "15:00", endTime: "16:00", notes: "Keep me", recurrence: { frequency: "weekly", interval: 1, count: 3 } });
+    instance.store.completeEvent(event.id, true, "2026-09-09");
+    const converted = instance.store.updateEvent(event.id, { kind: "deadline" });
+    expect(converted).toMatchObject({ id: event.id, kind: "deadline", notes: "Keep me", endDate: event.startDate, startTime: "15:00", completedDates: ["2026-09-09"], recurrence: event.recurrence });
+    expect(converted.endTime).toBeUndefined();
+    const moved = instance.store.updateEvent(event.id, { startDate: "2026-09-10" });
+    expect(moved.endDate).toBe("2026-09-10");
+    expect(moved.kind).toBe("deadline");
+    const block = instance.store.updateEvent(event.id, { kind: "event", endTime: "16:00" });
+    expect(block.kind).toBe("event"); expect(block.endTime).toBe("16:00");
+    const revision = instance.store.revision;
+    expect(() => instance.store.updateEvent(event.id, { kind: "deadline", endTime: "17:00" })).toThrow("duration");
+    expect(instance.store.revision).toBe(revision);
+  });
   test("completion persists, is reversible and idempotent, and survives ordinary edits", () => {
     const instance = store();
     const event = instance.store.createEvent({ title: "Finish homework", startDate: "2026-09-09" });

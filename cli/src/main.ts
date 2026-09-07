@@ -1,8 +1,8 @@
 #!/usr/bin/env bun
 import { randomUUID } from "node:crypto";
-import { addDays, eventIsCompleted, formatEventTime, isDateKey, isTimeKey, todayKey } from "@whale-cal/shared/dates";
+import { addDays, eventIsCompleted, formatItemTime, isDateKey, isTimeKey, todayKey } from "@whale-cal/shared/dates";
 import type { Command, Event } from "@whale-cal/shared/protocol";
-import type { Calendar, CalendarEvent, EventDraft, EventPatch, RecurrenceRule } from "@whale-cal/shared/types";
+import type { Calendar, CalendarEvent, CalendarItemKind, EventDraft, EventPatch, RecurrenceRule } from "@whale-cal/shared/types";
 import { request, requestRaw } from "./connection";
 
 const HELP = `Whale Cal CLI — daemon-backed calendar access for people and AI agents
@@ -25,6 +25,7 @@ Usage:
   cal ipc
 
 Event create options:
+  --type event|deadline  Default: event. Also supported by event update.
   --end-date DATE        Multi-day inclusive end (defaults to --date)
   --start HH:mm          Start wall time; omit for an all-day event
   --end HH:mm            End wall time
@@ -43,6 +44,11 @@ Event update options:
 
 Completion: --date is required for recurring events and identifies the occurrence
 start date. Completing one occurrence never completes the entire series.
+
+Deadlines: --date is the due date; --start is the optional due time. Omit --start
+for a date-only deadline. Deadlines cannot have --end or a different --end-date,
+never block free time, and support recurrence and completion like events.
+Updating --type deadline removes the old duration unless end fields are explicit.
 
 Machine interface:
   'cal schema' returns the daemon's JSON Schema for protocol version 1.
@@ -160,16 +166,17 @@ async function calendarId(value: string | undefined): Promise<string | undefined
 
 function eventLine(event: CalendarEvent, startDate = event.startDate, endDate = event.endDate, occurrenceId = event.id): string {
   const dates = endDate === startDate ? startDate : `${startDate}–${endDate}`;
-  return `${dates}  ${formatEventTime(event).padEnd(11)}  ${eventIsCompleted(event, startDate) ? "[done] " : ""}${event.title}  [event:${event.id}] [occurrence:${occurrenceId}] [calendar:${event.calendarId}]`;
+  return `${dates}  ${formatItemTime(event).padEnd(13)}  ${event.kind === "deadline" ? "◆ " : ""}${eventIsCompleted(event, startDate) ? "[done] " : ""}${event.title}  [event:${event.id}] [occurrence:${occurrenceId}] [calendar:${event.calendarId}]`;
 }
 
 function printEventDetails(event: CalendarEvent): void {
   console.log(`Event ID:    ${event.id}`);
   console.log(`Calendar ID: ${event.calendarId}`);
   console.log(`Title:       ${event.title}`);
+  console.log(`Type:        ${event.kind ?? "event"}`);
   console.log(`Completion:  ${event.recurrence ? `${event.completedDates?.length ?? 0} occurrences completed` : event.completed ? "done" : "unfinished"}`);
   if (event.recurrence && event.completedDates?.length) console.log(`Done dates:  ${event.completedDates.join(", ")}`);
-  console.log(`When:        ${event.startDate}${event.endDate !== event.startDate ? ` through ${event.endDate}` : ""}, ${formatEventTime(event)}`);
+  console.log(`When:        ${event.startDate}${event.endDate !== event.startDate ? ` through ${event.endDate}` : ""}, ${formatItemTime(event)}`);
   if (event.location) console.log(`Location:    ${event.location}`);
   if (event.recurrence) console.log(`Repeat:      ${event.recurrence.frequency}/${event.recurrence.interval}${event.recurrence.until ? ` until ${event.recurrence.until}` : ""}${event.recurrence.count ? ` count ${event.recurrence.count}` : ""}`);
   if (event.notes) console.log(`Notes:\n${event.notes}`);
@@ -227,7 +234,13 @@ async function eventGet(parsed: Parsed): Promise<void> {
   if (flag(parsed, "json")) printJson(response.event); else printEventDetails(response.event);
 }
 
-const EVENT_VALUE_OPTIONS = ["title", "date", "end-date", "start", "end", "calendar", "location", "notes-stdin", "repeat", "until", "count", "json"] as const;
+function itemKind(parsed: Parsed): CalendarItemKind | undefined {
+  const kind = option(parsed, "type");
+  if (kind !== undefined && kind !== "event" && kind !== "deadline") throw new UsageError("--type must be event or deadline.");
+  return kind;
+}
+
+const EVENT_VALUE_OPTIONS = ["type", "title", "date", "end-date", "start", "end", "calendar", "location", "notes-stdin", "repeat", "until", "count", "json"] as const;
 
 async function eventCreate(parsed: Parsed): Promise<void> {
   allowed(parsed, EVENT_VALUE_OPTIONS);
@@ -244,6 +257,7 @@ async function eventCreate(parsed: Parsed): Promise<void> {
   const notes = flag(parsed, "notes-stdin") ? await stdinText() : undefined;
   const repeat = recurrence(parsed);
   const draft: EventDraft = {
+    ...(itemKind(parsed) ? { kind: itemKind(parsed) } : {}),
     title, startDate, endDate,
     ...(selectedCalendar ? { calendarId: selectedCalendar } : {}),
     ...(startTime ? { startTime } : {}), ...(endTime ? { endTime } : {}),
@@ -267,6 +281,7 @@ async function eventUpdate(parsed: Parsed): Promise<void> {
   }
   const repeat = flag(parsed, "clear-repeat") ? undefined : recurrence(parsed);
   const patch: EventPatch = {};
+  if (itemKind(parsed)) patch.kind = itemKind(parsed);
   if (option(parsed, "title") !== undefined) patch.title = option(parsed, "title")!;
   if (option(parsed, "date") !== undefined) patch.startDate = requireDate(option(parsed, "date"), "--date");
   if (option(parsed, "end-date") !== undefined) patch.endDate = requireDate(option(parsed, "end-date"), "--end-date");

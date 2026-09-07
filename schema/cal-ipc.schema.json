@@ -8,6 +8,10 @@
     { "$ref": "#/$defs/event" }
   ],
   "$defs": {
+    "itemKind": {
+      "enum": ["event", "deadline"],
+      "description": "Defaults to event for legacy records. A deadline is a due point, never a busy interval: startDate is the due date, startTime the optional due time, endDate equals startDate, and endTime must be absent."
+    },
     "requestId": {
       "type": "string",
       "minLength": 1,
@@ -50,8 +54,10 @@
     "eventDraft": {
       "type": "object",
       "additionalProperties": false,
+      "allOf": [{ "if": { "required": ["kind"], "properties": { "kind": { "const": "deadline" } } }, "then": { "not": { "required": ["endTime"] } } }],
       "required": ["title", "startDate"],
       "properties": {
+        "kind": { "$ref": "#/$defs/itemKind" },
         "calendarId": { "type": "string" },
         "title": { "type": "string", "minLength": 1, "maxLength": 300 },
         "startDate": { "$ref": "#/$defs/date" },
@@ -66,8 +72,10 @@
     "eventPatch": {
       "type": "object",
       "additionalProperties": false,
+      "allOf": [{ "if": { "required": ["kind"], "properties": { "kind": { "const": "deadline" } } }, "then": { "properties": { "endTime": { "type": "null" } } } }],
       "minProperties": 1,
       "properties": {
+        "kind": { "$ref": "#/$defs/itemKind" },
         "calendarId": { "type": "string" },
         "title": { "type": "string", "minLength": 1, "maxLength": 300 },
         "startDate": { "$ref": "#/$defs/date" },
@@ -82,8 +90,10 @@
     "calendarEvent": {
       "type": "object",
       "additionalProperties": false,
+      "allOf": [{ "if": { "required": ["kind"], "properties": { "kind": { "const": "deadline" } } }, "then": { "not": { "required": ["endTime"] } } }],
       "required": ["id", "calendarId", "title", "startDate", "endDate", "createdAt", "updatedAt"],
       "properties": {
+        "kind": { "$ref": "#/$defs/itemKind" },
         "id": { "type": "string" },
         "calendarId": { "type": "string" },
         "title": { "type": "string", "minLength": 1, "maxLength": 300 },

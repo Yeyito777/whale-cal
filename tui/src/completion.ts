@@ -21,6 +21,7 @@ export function commandCompletions(text: string, cursor: number, state: AppState
       ["/ssh ", () => [...aliases().map(alias => [alias, "SSH calendar daemon"] as const), ["cancel", "Return to local calendar"]]],
       ["/goto ", () => [...new Set([state.selectedDate, todayKey(), addDays(todayKey(), 1)])].map(date => [date, "Jump to date"] as const)],
       ["/new ", () => [["today", "New event today"], ["tomorrow", "New event tomorrow"], ...["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map(day => [day, "New event on this weekday"] as const)]],
+      ["/deadline ", () => [["today", "Due today"], ["tomorrow", "Due tomorrow"], ...["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map(day => [day, "Due on this weekday"] as const)]],
       ["/search ", () => [...new Set(state.database.events.map(e => e.title))].map(title => [title, "Find event"] as const)],
     ];
     const provider = providers.find(([prefix]) => before.toLowerCase().startsWith(prefix));

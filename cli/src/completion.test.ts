@@ -37,6 +37,22 @@ test("CLI completes and reopens one recurring occurrence through real daemon IPC
     const reopened = await run("event", "reopen", event.id, "--date", "2026-09-08", "--json");
     expect(reopened.code).toBe(0);
     expect(JSON.parse(reopened.out).completedDates).toEqual([]);
+    const due = await run("event", "create", "--type", "deadline", "--title", "Submit quiz", "--date", "2026-09-14", "--start", "15:05", "--repeat", "weekly", "--count", "2", "--json");
+    expect(due.code).toBe(0);
+    const item = JSON.parse(due.out);
+    expect(item.kind).toBe("deadline"); expect(item.startTime).toBe("15:05"); expect(item.endTime).toBeUndefined();
+    const mark = await run("event", "complete", item.id, "--date", "2026-09-21", "--json");
+    expect(mark.code).toBe(0); expect(JSON.parse(mark.out).completedDates).toEqual(["2026-09-21"]);
+    const converted = await run("event", "update", item.id, "--type", "event", "--end", "16:00", "--json");
+    expect(converted.code).toBe(0); expect(JSON.parse(converted.out).kind).toBe("event");
+    const back = await run("event", "update", item.id, "--type", "deadline", "--json");
+    expect(back.code).toBe(0); expect(JSON.parse(back.out).endTime).toBeUndefined();
+    const invalid = await run("event", "create", "--type", "deadline", "--title", "Invalid range", "--date", "2026-09-14", "--start", "15:00", "--end", "16:00", "--json");
+    expect(invalid.code).not.toBe(0); expect(invalid.err).toContain("duration");
+    const badType = await run("event", "update", item.id, "--type", "other", "--json");
+    expect(badType.code).not.toBe(0); expect(badType.err).toContain("--type");
+    const dateOnly = await run("event", "create", "--type", "deadline", "--title", "Due on date", "--date", "2026-09-14", "--json");
+    expect(dateOnly.code).toBe(0); expect(JSON.parse(dateOnly.out).startTime).toBeUndefined();
   } finally {
     await server.stop();
     if (oldLog === undefined) delete process.env.CAL_DISABLE_FILE_LOG; else process.env.CAL_DISABLE_FILE_LOG = oldLog;

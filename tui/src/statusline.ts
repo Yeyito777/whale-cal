@@ -1,4 +1,4 @@
-import { addDays, addMonths, addYears, eventIsCompleted } from "@whale-cal/shared/dates";
+import { addDays, addMonths, addYears, deadlineDueAt, eventIsCompleted } from "@whale-cal/shared/dates";
 import type { CalendarEvent } from "@whale-cal/shared/types";
 import { visibleEvents, type AppState } from "./state";
 import { theme } from "./theme";
@@ -16,6 +16,7 @@ function occurrenceDate(event: CalendarEvent, index: number): string {
   }
 }
 function startsAt(event: CalendarEvent, date: string): number {
+  if (event.kind === "deadline") return deadlineDueAt(event, date);
   // Calendar wall time, intentionally using the user's local timezone (including DST).
   return new Date(`${date}T${event.startTime ?? "00:00"}:00`).getTime();
 }
@@ -55,11 +56,11 @@ export const STATUSLINE_HEIGHT = 2;
 export function renderStatusline(state: AppState, now = Date.now()): [string, string] {
   const next = nextEvent(visibleEvents(state), now);
   const title = !state.connected ? "offline" : !next ? "none scheduled"
-    : next.event.title + (next.event.startTime ? "" : " · All day");
+    : next.event.title + (next.event.kind === "deadline" ? " · Deadline" : next.event.startTime ? "" : " · All day");
   const remaining = state.connected && next ? countdown(next.timestamp - now) : "—";
   const row = (label: string, value: string) => {
     const content = `${theme.muted}${label}${theme.accent}${truncate(value, Math.max(0, state.cols - width(label)))}`;
     return `${theme.appBg}${pad(content, state.cols)}${theme.reset}`;
   };
-  return [row("  Next Event: ", title), row("  Happens in: ", remaining)];
+  return [row(next?.event.kind === "deadline" ? "  Next Due: " : "  Next Event: ", title), row(next?.event.kind === "deadline" ? "  Due in: " : "  Happens in: ", remaining)];
 }

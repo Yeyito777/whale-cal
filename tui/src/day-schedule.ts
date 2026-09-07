@@ -23,10 +23,11 @@ export function daySchedule(occurrences: readonly EventOccurrence[], date: DateK
     const { event } = occurrence;
     const allDay = !event.startTime;
     const start = allDay || occurrence.startDate < date ? 0 : minute(event.startTime!);
-    const end = allDay || !event.endTime ? start : occurrence.endDate > date ? 1440 : minute(event.endTime);
-    const time = allDay ? "all-day" : !event.endTime ? `${clock(start)}–?` : range(start, end);
-    return { eventIndex, start, end, time };
-  }).sort((a, b) => a.start - b.start || a.eventIndex - b.eventIndex);
+    const deadline = event.kind === "deadline";
+    const end = deadline || allDay || !event.endTime ? start : occurrence.endDate > date ? 1440 : minute(event.endTime);
+    const time = deadline ? allDay ? "Due this day" : `Due ${clock(start)}` : allDay ? "all-day" : !event.endTime ? `${clock(start)}–?` : range(start, end);
+    return { eventIndex, start, end, time, priority: deadline && allDay ? -1 : 0 };
+  }).sort((a, b) => a.priority - b.priority || a.start - b.start || a.eventIndex - b.eventIndex);
   const rows: ScheduleRow[] = [];
   let busyUntil = 0, freeMinutes = 0;
   const free = (start: number, end: number) => {
@@ -47,4 +48,11 @@ export function daySchedule(occurrences: readonly EventOccurrence[], date: DateK
 export function scheduleWindow(rows: readonly ScheduleRow[], eventIndex: number, capacity: number): number {
   const selected = Math.max(0, rows.findIndex(row => row.kind === "event" && row.eventIndex === eventIndex));
   return Math.max(0, Math.min(selected - Math.floor(capacity / 2), rows.length - capacity));
+}
+
+export function moveScheduleSelection(rows: readonly ScheduleRow[], selected: number, amount: number): number {
+  const indices = rows.flatMap(row => row.kind === "event" ? [row.eventIndex] : []);
+  if (!indices.length) return selected;
+  const position = Math.max(0, indices.indexOf(selected));
+  return indices[((position + amount) % indices.length + indices.length) % indices.length]!;
 }

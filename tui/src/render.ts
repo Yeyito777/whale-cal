@@ -1,5 +1,5 @@
 import {
-  addDays, endOfWeek, eventIsCompleted, formatEventTime, formatLongDate, formatMonthYear, formatShortDate,
+  addDays, endOfWeek, deadlineIsOverdue, eventIsCompleted, formatItemTime, formatLongDate, formatMonthYear, formatShortDate,
   monthMatrix, occurrencesForRange, startOfWeek, todayKey, weekdayLabels,
 } from "@whale-cal/shared/dates";
 import type { Calendar, DateKey, EventOccurrence } from "@whale-cal/shared/types";
@@ -12,7 +12,7 @@ import { completionMenu } from "./completion-menu";
 import { renderStatusline, STATUSLINE_HEIGHT } from "./statusline";
 import { cursorAt, flushFrame, overlayAt } from "./frame";
 import {
-  eventsOnSelectedDate, selectedCalendar, selectedOccurrence, type AppState, type EditorState, type Notice, visibleEvents,
+  editorItemKind, eventsOnSelectedDate, selectedCalendar, selectedOccurrence, type AppState, type EditorState, type Notice, visibleEvents,
 } from "./state";
 import { eventColor, theme } from "./theme";
 import { cursorBar, cursorBlock } from "./terminal";
@@ -40,11 +40,12 @@ function calendarFor(state: AppState, id: string): Calendar | undefined {
 function eventLabel(state: AppState, occurrence: EventOccurrence, max: number): string {
   const event = occurrence.event;
   const calendar = calendarFor(state, event.calendarId);
-  const time = event.startTime ? `${event.startTime} ` : "";
+  const time = event.kind === "deadline" ? event.startTime ? `Due ${event.startTime} ` : "Due " : event.startTime ? `${event.startTime} ` : "";
   const repeat = event.recurrence ? "↻ " : "";
   const plain = truncate(`${time}${repeat}${event.title}`, Math.max(0, max - 2));
   if (eventIsCompleted(event, occurrence.startDate)) return `${theme.muted}✓ ${theme.strike}${plain}${theme.strikeOff}${theme.reset}`;
-  return `${eventColor(calendar?.color ?? "#1d9bf0")}• ${plain}${theme.reset}`;
+  const color = deadlineIsOverdue(event, occurrence.startDate) ? theme.warning : eventColor(calendar?.color ?? "#1d9bf0");
+  return `${color}${event.kind === "deadline" ? "◆" : "•"} ${plain}${theme.reset}`;
 }
 
 function renderTopbar(state: AppState): string {
@@ -209,12 +210,13 @@ function renderAgenda(state: AppState, widthValue: number, height: number): stri
     }
     const isSelected = occurrence.startDate <= state.selectedDate && occurrence.endDate >= state.selectedDate
       && eventsOnSelectedDate(state)[state.selectedEventIndex]?.id === occurrence.id;
-    const time = formatEventTime(occurrence.event).padEnd(13);
+    const time = formatItemTime(occurrence.event).padEnd(13);
     const calendar = calendarFor(state, occurrence.event.calendarId);
     state.layout.eventRows.push({ index: 0, date: occurrence.startDate, eventId: occurrence.event.id, row: state.layout.bodyTop + row, left: state.layout.mainLeft, right: state.cols });
     const done = eventIsCompleted(occurrence.event, occurrence.startDate);
     const label = truncate(occurrence.event.title, Math.max(0, widthValue - width(`   ${time} ● `)));
-    const title = done ? `${theme.muted}✓ ${theme.strike}${label}${theme.strikeOff}` : `${eventColor(calendar?.color ?? "#1d9bf0")}● ${theme.text}${label}`;
+    const overdue = deadlineIsOverdue(occurrence.event, occurrence.startDate);
+    const title = done ? `${theme.muted}✓ ${theme.strike}${label}${theme.strikeOff}` : `${overdue ? theme.warning : eventColor(calendar?.color ?? "#1d9bf0")}${occurrence.event.kind === "deadline" ? "◆" : "●"} ${overdue ? theme.warning : theme.text}${label}`;
     rows[row++] = segment(`${isSelected ? " ▸" : "  "} ${theme.muted}${time} ${title}`, widthValue, isSelected ? theme.sidebarSelBg : theme.appBg);
     if (occurrence.event.location && row < height) rows[row++] = segment(`${theme.muted}                  @ ${occurrence.event.location}`, widthValue);
   }
@@ -266,9 +268,12 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
   const schedule = daySchedule(occurrences, state.selectedDate);
   const start = scheduleWindow(schedule.rows, state.selectedEventIndex, capacity);
   const range = schedule.rows.length > capacity ? ` · ${start + 1}–${Math.min(schedule.rows.length, start + capacity)} / ${schedule.rows.length}` : "";
-  putList(1, `${theme.muted} ${occurrences.length} event${occurrences.length === 1 ? "" : "s"} · ${durationLabel(schedule.freeMinutes)} free${range}`);
+  const deadlines = occurrences.filter(({ event }) => event.kind === "deadline").length;
+  const events = occurrences.length - deadlines;
+  const counts = [events || !deadlines ? `${events} event${events === 1 ? "" : "s"}` : "", deadlines ? `${deadlines} deadline${deadlines === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
+  putList(1, `${theme.muted} ${counts} · ${durationLabel(schedule.freeMinutes)} free${range}`);
   if (!occurrences.length) putList(2, `${theme.muted} Nothing scheduled. A little breathing room.`);
-  const missingEnds = occurrences.filter(({ event }) => event.startTime && !event.endTime).length;
+  const missingEnds = occurrences.filter(({ event }) => event.kind !== "deadline" && event.startTime && !event.endTime).length;
   if (missingEnds) putList(2, `${theme.muted} ${missingEnds} missing end time${missingEnds === 1 ? "" : "s"} · excluded from free-time total`);
   for (let i = start; i < Math.min(schedule.rows.length, start + capacity); i++) {
     const item = schedule.rows[i]!;
@@ -282,7 +287,8 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
     const calendar = calendarFor(state, occurrence.event.calendarId);
     const title = truncate(occurrence.event.title, listWidth - 21);
     const done = eventIsCompleted(occurrence.event, occurrence.startDate);
-    const styledTitle = done ? `${theme.muted}✓ ${theme.strike}${title}${theme.strikeOff}` : `${eventColor(calendar?.color ?? "#1d9bf0")}● ${theme.text}${title}`;
+    const overdue = deadlineIsOverdue(occurrence.event, occurrence.startDate);
+    const styledTitle = done ? `${theme.muted}✓ ${theme.strike}${title}${theme.strikeOff}` : `${overdue ? theme.warning : eventColor(calendar?.color ?? "#1d9bf0")}${occurrence.event.kind === "deadline" ? "◆" : "●"} ${overdue ? theme.warning : theme.text}${title}`;
     const content = `${active ? theme.accent : theme.muted} ${active ? "▸" : " "} ${theme.muted}${pad(item.time, 13)} ${styledTitle}`;
     putList(row, content, active);
     state.layout.eventRows.push({ index: item.eventIndex, left, right: left + listWidth - 1, row: top + row + 1 });
@@ -296,11 +302,14 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
     const event = selected.event;
     const calendar = calendarFor(state, event.calendarId);
     const done = eventIsCompleted(event, selected.startDate);
-    add(event.title, theme.bold + (done ? theme.muted + theme.strike : theme.text));
+    const overdue = deadlineIsOverdue(event, selected.startDate);
+    add(event.title, theme.bold + (done ? theme.muted + theme.strike : overdue ? theme.warning : theme.text));
     details.push(theme.strikeOff + theme.boldOff);
     if (done) add("✓ Completed", theme.muted);
-    add(`${formatEventTime(event)}  ·  ${selected.startDate === selected.endDate ? selected.startDate : selected.startDate + " — " + selected.endDate}`);
-    if (event.startTime && !event.endTime) add("End time not set; no duration reserved in the free-time calculation.", theme.muted);
+    if (event.kind === "deadline") add(overdue ? "◆ Deadline · Overdue" : "◆ Deadline", overdue ? theme.warning : theme.muted);
+    add(`${formatItemTime(event)}  ·  ${selected.startDate === selected.endDate ? selected.startDate : selected.startDate + " — " + selected.endDate}`);
+    if (event.kind === "deadline") add("Due point only · does not reserve time.", theme.muted);
+    else if (event.startTime && !event.endTime) add("End time not set; no duration reserved in the free-time calculation.", theme.muted);
     add(`● ${calendar?.name ?? "Unknown calendar"}`, eventColor(calendar?.color ?? "#1d9bf0"));
     if (event.location) { details.push(""); add("Location", theme.muted); add(event.location); }
     const recurrence = recurrenceLabel(selected);
@@ -320,24 +329,28 @@ function renderEditorOverlay(state: AppState, rows: string[], editor: EditorStat
   const boxWidth = Math.min(82, state.cols - 6);
   const valueWidth = boxWidth - 17;
   const errorRows = state.rows >= 19 ? 1 : 0;
-  const boxHeight = editor.fields.length + 3 + errorRows;
+  const visibleCount = Math.min(editor.fields.length, Math.max(1, state.rows - STATUSLINE_HEIGHT - 7 - errorRows));
+  const fieldStart = Math.max(0, Math.min(editor.active - visibleCount + 1, editor.fields.length - visibleCount));
+  const boxHeight = visibleCount + 3 + errorRows;
   const top = Math.max(1, Math.floor((state.rows - STATUSLINE_HEIGHT - 2 - boxHeight) / 2));
   const left = Math.max(1, Math.floor((state.cols - boxWidth) / 2) + 1);
   const put = (row: number, content: string) => putOverlayRow(rows, row, left, boxWidth, content);
-  put(top, titledOverlayBorder(editor.kind === "create" ? "New event" : "Edit event", boxWidth));
+  const itemKind = editorItemKind(editor);
+  put(top, titledOverlayBorder(`${editor.kind === "create" ? "New" : "Edit"} ${itemKind}`, boxWidth));
   let cursor: { row: number; col: number } | null = null;
-  for (let index = 0; index < editor.fields.length; index++) {
+  for (let index = fieldStart; index < fieldStart + visibleCount; index++) {
     const item = editor.fields[index]!;
     const active = index === editor.active;
     const window = inputWindow(item.value.replace(/\n/g, "↵"), active ? editor.cursor : 0, valueWidth);
-    const placeholder = item.key === "startTime" ? "All day" : item.key === "endTime" ? "HH:MM" : item.key === "title" ? "Event title" : "Optional";
+    const placeholder = item.key === "startTime" ? itemKind === "deadline" ? "Date only" : "All day" : item.key === "endTime" ? "HH:MM" : item.key === "title" ? itemKind === "deadline" ? "Deadline title" : "Event title" : "Optional";
     const display = item.value ? pad(window.text, valueWidth) : `${theme.muted}${pad(placeholder, valueWidth)}`;
     const fieldStyle = active ? theme.sidebarSelBg + theme.text : theme.appBg + theme.text;
-    put(top + 1 + index, `${theme.borderFocused}│${fieldStyle} ${theme.muted}${pad(item.label, 10)} ${theme.borderFocused}│${fieldStyle} ${display} ${theme.appBg}${theme.borderFocused}│`);
-    state.layout.editorFields.push({ index, left: left + 15, right: left + boxWidth - 3, row: top + 2 + index });
-    if (active && !editor.saving) cursor = { row: top + 2 + index, col: left + 15 + window.column };
+    const fieldRow = top + 1 + index - fieldStart;
+    put(fieldRow, `${theme.borderFocused}│${fieldStyle} ${theme.muted}${pad(item.label, 10)} ${theme.borderFocused}│${fieldStyle} ${display} ${theme.appBg}${theme.borderFocused}│`);
+    state.layout.editorFields.push({ index, left: left + 15, right: left + boxWidth - 3, row: fieldRow + 1 });
+    if (active && !editor.saving) cursor = { row: fieldRow + 1, col: left + 15 + window.column };
   }
-  const errorRow = top + editor.fields.length + 1;
+  const errorRow = top + visibleCount + 1;
   if (errorRows) put(errorRow, framedOverlayRow(`${theme.error} ${truncate(editor.error ?? "", boxWidth - 4)}`, boxWidth));
   const actionsRow = errorRow + errorRows;
   let actions = " ";

@@ -1,5 +1,6 @@
 export type DateKey = string; // YYYY-MM-DD in the calendar's local timezone
 export type TimeKey = string; // HH:mm, 24-hour local wall time
+export type CalendarItemKind = "event" | "deadline";
 
 export type RecurrenceFrequency = "none" | "daily" | "weekly" | "monthly" | "yearly";
 
@@ -22,6 +23,8 @@ export interface Calendar {
 }
 
 export interface CalendarEvent {
+  /** Missing on legacy records means event. Deadlines use startDate/startTime as due date/time. */
+  kind?: CalendarItemKind;
   id: string;
   calendarId: string;
   title: string;
@@ -57,6 +60,7 @@ export interface CalendarDatabase {
 }
 
 export interface EventDraft {
+  kind?: CalendarItemKind;
   calendarId?: string;
   title: string;
   startDate: DateKey;

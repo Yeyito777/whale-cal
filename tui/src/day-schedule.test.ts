@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { CalendarEvent } from "@whale-cal/shared/types";
 import { occurrencesOnDate } from "@whale-cal/shared/dates";
-import { daySchedule, durationLabel, scheduleWindow } from "./day-schedule";
+import { daySchedule, durationLabel, moveScheduleSelection, scheduleWindow } from "./day-schedule";
 import { createState, eventsOnSelectedDate } from "./state";
 import { buildFrame } from "./render";
 import { stripAnsi } from "./text";
@@ -19,6 +19,23 @@ test("shows morning, between-event and evening gaps with a correct daily total",
   expect(durationLabel(result.freeMinutes)).toBe("18h40m");
   expect(durationLabel(40)).toBe("40m");
   expect(durationLabel(0)).toBe("0m");
+});
+
+test("deadlines never reserve time, sort date-only items above the timeline, and retain exact due times", () => {
+  const result = schedule([
+    event("All-day note"),
+    event("Date-only due", undefined, undefined, { kind: "deadline" }),
+    event("Timed due", "15:05", undefined, { kind: "deadline" }),
+    event("Work", "10:00", "11:00"),
+  ]);
+  expect(result.freeMinutes).toBe(23 * 60);
+  expect(result.rows[0]).toMatchObject({ kind: "event", eventIndex: 1, time: "Due this day" });
+  expect(result.rows.some(row => row.kind === "event" && row.time === "Due 15:05")).toBe(true);
+  expect(result.rows.filter(row => row.kind === "free").map(row => row.time)).toEqual(["00:00–10:00", "11:00–15:05", "15:05–24:00"]);
+  // j/k follows visual order even when date-only deadlines are lifted above notes.
+  expect(moveScheduleSelection(result.rows, 1, 1)).toBe(0);
+  expect(moveScheduleSelection(result.rows, 0, 1)).toBe(2);
+  expect(moveScheduleSelection(result.rows, 1, -1)).toBe(3);
 });
 
 test("overlapping, nested and adjacent events never create false gaps or double-count busy time", () => {

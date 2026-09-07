@@ -30,3 +30,11 @@ test("canonical event schema includes daemon-owned fields and rejects extras", (
   expect(definition?.required).toContain("createdAt");
   expect(definition?.required).toContain("updatedAt");
 });
+
+test("the machine contract exposes both kinds for create, update and canonical events", () => {
+  const defs = CAL_IPC_SCHEMA.$defs;
+  expect(defs.itemKind.enum).toEqual(["event", "deadline"]);
+  expect(defs.eventDraft.properties.kind.$ref).toBe("#/$defs/itemKind");
+  expect(defs.eventPatch.properties.kind.$ref).toBe("#/$defs/itemKind");
+  expect(defs.calendarEvent.properties.kind.$ref).toBe("#/$defs/itemKind");
+});

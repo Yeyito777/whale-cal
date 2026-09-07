@@ -1,5 +1,5 @@
 import { addDays, isDateKey, isTimeKey, occurrencesOnDate, todayKey } from "@whale-cal/shared/dates";
-import type { Calendar, CalendarDatabase, CalendarEvent, CalendarView, DateKey, EventDraft, EventOccurrence, RecurrenceRule } from "@whale-cal/shared/types";
+import type { Calendar, CalendarDatabase, CalendarEvent, CalendarItemKind, CalendarView, DateKey, EventDraft, EventOccurrence, RecurrenceRule } from "@whale-cal/shared/types";
 import { focusCalendar } from "./focus";
 
 export type Focus = "calendar" | "sidebar";
@@ -14,7 +14,7 @@ export interface PromptState {
   focusEpoch?: number;
 }
 
-export type EditorFieldKey = "title" | "startDate" | "endDate" | "startTime" | "endTime" | "calendar" | "location" | "repeat" | "notes";
+export type EditorFieldKey = "title" | "itemKind" | "startDate" | "endDate" | "startTime" | "endTime" | "calendar" | "location" | "repeat" | "notes";
 export interface EditorField { key: EditorFieldKey; label: string; value: string }
 export interface EditorState {
   kind: "create" | "edit";
@@ -28,6 +28,7 @@ export interface EditorState {
   originalDate?: DateKey;
   saveDate?: DateKey;
   lastStartDate?: DateKey;
+  eventEnd?: { startDate: string; endDate: string; endTime: string };
 }
 
 export interface Notice { text: string; kind: "info" | "success" | "warning" | "error"; at: number }
@@ -129,6 +130,7 @@ export function createEditor(state: AppState, event?: CalendarEvent): EditorStat
     : selectedCalendar(state) ?? state.database.calendars[0];
   const fields: EditorField[] = [
     { key: "title", label: "Title", value: event?.title ?? "" },
+    { key: "itemKind", label: "Type", value: "event" },
     { key: "startDate", label: "Date", value: event?.startDate ?? state.selectedDate },
     { key: "endDate", label: "End date", value: event?.endDate ?? state.selectedDate },
     { key: "startTime", label: "Start", value: event?.startTime ?? "" },
@@ -138,14 +140,41 @@ export function createEditor(state: AppState, event?: CalendarEvent): EditorStat
     { key: "repeat", label: "Repeat", value: recurrenceText(event?.recurrence) },
     { key: "notes", label: "Notes", value: event?.notes ?? "" },
   ];
-  return {
+  const editor: EditorState = {
     kind: event ? "edit" : "create", ...(event ? { eventId: event.id } : {}), fields,
-    active: 0, cursor: fields[0]!.value.length, mode: "insert", originalDate: event?.startDate, lastStartDate: fields[1]!.value,
+    active: 0, cursor: fields[0]!.value.length, mode: "insert", originalDate: event?.startDate, lastStartDate: event?.startDate ?? state.selectedDate,
   };
+  if (event?.kind === "deadline") setEditorItemKind(editor, "deadline");
+  return editor;
 }
 
 function field(editor: EditorState, key: EditorFieldKey): string {
   return editor.fields.find(item => item.key === key)?.value.trim() ?? "";
+}
+
+export function editorItemKind(editor: EditorState): CalendarItemKind {
+  return field(editor, "itemKind") === "deadline" ? "deadline" : "event";
+}
+
+/** Changing type is reversible within the draft; deadlines have no duration fields. */
+export function setEditorItemKind(editor: EditorState, kind: CalendarItemKind): void {
+  if (kind === editorItemKind(editor)) return;
+  const activeKey = editor.fields[editor.active]?.key;
+  const actionOffset = editor.active - editor.fields.length;
+  if (kind === "deadline") {
+    editor.eventEnd = { startDate: field(editor, "startDate"), endDate: field(editor, "endDate"), endTime: field(editor, "endTime") };
+    editor.fields = editor.fields.filter(item => item.key !== "endDate" && item.key !== "endTime");
+  } else {
+    const saved = editor.eventEnd;
+    const endDate = saved && saved.endDate !== saved.startDate ? saved.endDate : field(editor, "startDate");
+    editor.fields.splice(editor.fields.findIndex(item => item.key === "startDate") + 1, 0, { key: "endDate", label: "End date", value: endDate });
+    editor.fields.splice(editor.fields.findIndex(item => item.key === "startTime") + 1, 0, { key: "endTime", label: "End", value: saved?.endTime ?? "" });
+  }
+  editor.fields.find(item => item.key === "itemKind")!.value = kind;
+  editor.fields.find(item => item.key === "startDate")!.label = kind === "deadline" ? "Due date" : "Date";
+  editor.fields.find(item => item.key === "startTime")!.label = kind === "deadline" ? "Due time" : "Start";
+  editor.active = actionOffset >= 0 ? editor.fields.length + actionOffset : Math.max(0, editor.fields.findIndex(item => item.key === activeKey));
+  editor.cursor = Math.min(editor.cursor, editor.fields[editor.active]?.value.length ?? 0);
 }
 
 function parseRepeat(value: string): RecurrenceRule | undefined {
@@ -163,8 +192,8 @@ function parseRepeat(value: string): RecurrenceRule | undefined {
 export function syncEditorDates(editor: EditorState): void {
   const start = field(editor, "startDate");
   if (!isDateKey(start) || start === editor.lastStartDate) return;
-  const end = editor.fields.find(item => item.key === "endDate")!;
-  if (end.value === editor.lastStartDate) end.value = start;
+  const end = editor.fields.find(item => item.key === "endDate");
+  if (end && end.value === editor.lastStartDate) end.value = start;
   editor.lastStartDate = start;
 }
 
@@ -190,7 +219,7 @@ export function editorDraft(state: AppState, editor: EditorState): EventDraft {
   const location = field(editor, "location");
   const notes = field(editor, "notes");
   return {
-    calendarId: calendar.id, title, startDate, endDate,
+    kind: editorItemKind(editor), calendarId: calendar.id, title, startDate, endDate,
     ...(startTime ? { startTime } : {}), ...(endTime ? { endTime } : {}),
     ...(location ? { location } : {}), ...(notes ? { notes } : {}),
     ...(parseRepeat(field(editor, "repeat")) ? { recurrence: parseRepeat(field(editor, "repeat")) } : {}),

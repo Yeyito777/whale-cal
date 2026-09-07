@@ -107,6 +107,8 @@ export class CalendarStore {
   }
 
   private normalizeDraft(draft: EventDraft): Omit<CalendarEvent, "id" | "createdAt" | "updatedAt"> {
+    const kind = draft.kind === undefined ? "event" : draft.kind;
+    if (kind !== "event" && kind !== "deadline") throw new Error("Type must be event or deadline.");
     const title = cleanText(draft.title, "Title", 300, true)!;
     const calendarId = this.calendar(draft.calendarId).id;
     if (!isDateKey(draft.startDate)) throw new Error("Start date must use YYYY-MM-DD.");
@@ -115,11 +117,15 @@ export class CalendarStore {
     if (endDate < draft.startDate) throw new Error("End date cannot be before the start date.");
     if (draft.startTime !== undefined && !isTimeKey(draft.startTime)) throw new Error("Start time must use HH:mm.");
     if (draft.endTime !== undefined && !isTimeKey(draft.endTime)) throw new Error("End time must use HH:mm.");
+    if (kind === "deadline" && (endDate !== draft.startDate || draft.endTime !== undefined)) {
+      throw new Error("Deadlines have one due date and optional due time, not an end date or duration.");
+    }
     if (!draft.startTime && draft.endTime) throw new Error("An end time requires a start time.");
     if (draft.startTime && draft.endTime && draft.startDate === endDate && draft.endTime <= draft.startTime) {
       throw new Error("End time must be after the start time.");
     }
     return {
+      kind,
       calendarId,
       title,
       startDate: draft.startDate,
@@ -145,12 +151,13 @@ export class CalendarStore {
     if (index === -1) throw new Error("Event not found.");
     const old = this.db.events[index]!;
     const normalized = this.normalizeDraft({
+      kind: patch.kind === undefined ? old.kind : patch.kind,
       calendarId: patch.calendarId ?? old.calendarId,
       title: patch.title ?? old.title,
       startDate: patch.startDate ?? old.startDate,
-      endDate: patch.endDate ?? old.endDate,
+      endDate: patch.endDate ?? ((patch.kind ?? old.kind) === "deadline" ? patch.startDate ?? old.startDate : old.endDate),
       startTime: "startTime" in patch ? patch.startTime ?? undefined : old.startTime,
-      endTime: "endTime" in patch ? patch.endTime ?? undefined : old.endTime,
+      endTime: "endTime" in patch ? patch.endTime ?? undefined : patch.kind === "deadline" ? undefined : old.endTime,
       location: "location" in patch ? patch.location ?? undefined : old.location,
       notes: "notes" in patch ? patch.notes ?? undefined : old.notes,
       recurrence: "recurrence" in patch ? patch.recurrence ?? undefined : old.recurrence,

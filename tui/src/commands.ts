@@ -1,6 +1,6 @@
 import { isDateKey } from "@whale-cal/shared/dates";
 import { parseQuickAdd } from "@whale-cal/shared/quick-add";
-import type { CalendarView, EventDraft } from "@whale-cal/shared/types";
+import type { CalendarItemKind, CalendarView, EventDraft } from "@whale-cal/shared/types";
 import type { AppState } from "./state";
 
 export type CommandAction =
@@ -10,7 +10,7 @@ export type CommandAction =
   | { type: "today" }
   | { type: "goto"; date: string }
   | { type: "view"; view: CalendarView }
-  | { type: "new"; draft?: EventDraft }
+  | { type: "new"; kind?: CalendarItemKind; draft?: EventDraft }
   | { type: "edit" }
   | { type: "delete" }
   | { type: "complete"; completed: boolean }
@@ -25,6 +25,7 @@ export type CommandAction =
 
 export const COMMANDS = [
   ["/help", "show keys and commands"], ["/today", "jump to today"], ["/goto", "select YYYY-MM-DD"],
+  ["/deadline", "create a deadline, not a time block"],
   ["/view", "month, week, or agenda"], ["/new", "quick-create an event"], ["/edit", "edit selected event"],
   ["/delete", "delete selected event"], ["/search", "find an event"], ["/calendar", "new/toggle calendars"],
   ["/done", "mark selected event done"], ["/undone", "mark selected event unfinished"],
@@ -46,10 +47,16 @@ export function runCommand(text: string, state: AppState): CommandAction {
     case "/view":
       if (!(["month", "week", "agenda"] as string[]).includes(args[0] ?? "")) return { type: "error", message: "Usage: /view month|week|agenda" };
       return { type: "view", view: args[0] as CalendarView };
-    case "/new":
-      if (!rest) return { type: "new" };
-      try { return { type: "new", draft: parseQuickAdd(rest, { selectedDate: state.selectedDate }) }; }
+    case "/new": case "/deadline": {
+      const kind = name!.toLowerCase() === "/deadline" ? "deadline" : "event";
+      if (!rest) return kind === "event" ? { type: "new" } : { type: "new", kind };
+      try {
+        const draft = parseQuickAdd(rest, { selectedDate: state.selectedDate });
+        if (kind === "deadline" && draft.endTime) throw new Error("A deadline has a due time, not a time range.");
+        return { type: "new", draft: { ...draft, kind } };
+      }
       catch (error) { return { type: "error", message: error instanceof Error ? error.message : String(error) }; }
+    }
     case "/edit": return { type: "edit" };
     case "/delete": return { type: "delete" };
     case "/done": return { type: "complete", completed: true };

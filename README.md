@@ -203,6 +203,42 @@ bun run daemon -- proxy        # stdio ↔ socket bridge (used by SSH)
 
 ## CLI, schema, and AI IPC
 
+### Events and deadlines
+
+Items have an explicit `event` or `deadline` type. Existing records without a
+type remain events; titles and notes are never used to guess or migrate types.
+
+- **Event:** a scheduled time block. Explicit durations count as busy time.
+- **Deadline:** a due date with an optional due time, never a busy interval.
+  Deadlines use a `◆` marker and `Due HH:MM` label rather than a time range.
+  Date-only deadlines appear above the day timeline. Unfinished overdue deadlines
+  use the warning color; date-only deadlines become overdue only after the due
+  day ends in the local timezone. Completed deadlines are crossed out.
+
+Use the editor's **Type** selector (click, Left/Right, or Space) to choose.
+Deadline forms show **Due date / Due time**, with no end date or end time.
+`/deadline` opens a deadline form; `/deadline tomorrow 15:05 Submit quiz` creates
+one directly. Recurrence and per-occurrence completion work for either type.
+
+```sh
+cal event create --type event --title 'Study session' --date 2026-09-14 --start 14:00 --end 15:00 --json
+cal event create --type deadline --title 'Submit quiz' --date 2026-09-14 --start 15:05 --json
+cal event create --type deadline --title 'Form due' --date 2026-09-14 --json
+cal event update EVENT_ID --type deadline --json
+cal event update EVENT_ID --type event --end 16:00 --json
+```
+
+The CLI defaults to `--type event`. For deadlines, `--date` means the due date
+and `--start` the optional due time; `--all-day` on update removes the due time.
+Converting to a deadline keeps the item's ID, start/due date and time, notes,
+calendar, recurrence and completion, but removes its previous duration. Explicit
+incompatible end fields are rejected rather than silently ignored.
+
+The JSON/IPC field is `kind: "event" | "deadline"` inside the event draft or
+patch. Deadlines store their due point in `startDate`/`startTime`, require
+`endDate` to equal `startDate`, and have no `endTime`. `cal schema` describes both
+types. The next-item status block says **Next Due / Due in** for a deadline.
+
 ### Completed events
 
 Press `x` on a selected event, click **Done / Reopen** in the day toolbar, or

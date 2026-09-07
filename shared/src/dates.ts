@@ -125,6 +125,23 @@ export function eventIsCompleted(event: CalendarEvent, occurrenceDate = event.st
   return event.recurrence ? (event.completedDates ?? []).includes(occurrenceDate) : event.completed === true;
 }
 
+/** A date-only deadline is due by the end of that local day, not at its start. */
+export function deadlineDueAt(event: Pick<CalendarEvent, "startTime">, date: DateKey): number {
+  if (event.startTime) return new Date(`${date}T${event.startTime}:00`).getTime();
+  const end = dateFromKey(date);
+  end.setDate(end.getDate() + 1);
+  end.setHours(0, 0, 0, 0);
+  return end.getTime();
+}
+
+export function deadlineIsOverdue(event: CalendarEvent, date = event.startDate, now = Date.now()): boolean {
+  return event.kind === "deadline" && !eventIsCompleted(event, date) && now >= deadlineDueAt(event, date);
+}
+
+export function formatItemTime(event: Pick<CalendarEvent, "kind" | "startTime" | "endTime">): string {
+  return event.kind === "deadline" ? event.startTime ? `Due ${event.startTime}` : "Due this day" : formatEventTime(event);
+}
+
 export function formatEventTime(event: Pick<CalendarEvent, "startTime" | "endTime">): string {
   if (!event.startTime) return "all-day";
   return event.endTime ? `${event.startTime}–${event.endTime}` : event.startTime;

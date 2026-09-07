@@ -1,8 +1,9 @@
 import { addDays, addMonths, eventIsCompleted, occurrencesForRange, todayKey } from "@whale-cal/shared/dates";
-import type { CalendarEvent, CalendarView, EventDraft, EventPatch } from "@whale-cal/shared/types";
+import type { CalendarEvent, CalendarItemKind, CalendarView, EventDraft, EventPatch } from "@whale-cal/shared/types";
 import { DaemonClient, type ClientEvent } from "./client";
 import { runCommand, type CommandAction } from "./commands";
 import { PromptController } from "./prompt";
+import { daySchedule, moveScheduleSelection } from "./day-schedule";
 import { focusCalendar, focusPrompt, focusSidebar, handleFocusKey, isPromptFocused } from "./focus";
 import { STATUSLINE_HEIGHT } from "./statusline";
 import { cycleCompletion } from "./completion";
@@ -11,7 +12,7 @@ import { InputBuffer, parseInput, type KeyEvent, type MouseEvent } from "./input
 import { loadPreferences, savePreferences } from "./preferences";
 import { render } from "./render";
 import {
-  createEditor, createState, editorDraft, eventsOnSelectedDate,
+  createEditor, createState, editorDraft, editorItemKind, setEditorItemKind, eventsOnSelectedDate,
   moveDate, selectDate, selectedCalendar, selectedOccurrence, setNotice, settleEditorSave, syncEditorDates, type AppState, type EditorState,
 } from "./state";
 import {
@@ -159,9 +160,10 @@ function scheduleReconnect(): void {
   }, 1000);
 }
 
-function openNewEditor(): void {
+function openNewEditor(kind: CalendarItemKind = "event"): void {
   if (state.database.calendars.length === 0) { notice("No calendar is available.", "error"); return; }
   state.editor = createEditor(state);
+  setEditorItemKind(state.editor, kind);
 }
 
 function editSelected(): void {
@@ -232,7 +234,7 @@ function execute(action: CommandAction): void {
     case "today": selectDate(state, todayKey()); return;
     case "goto": selectDate(state, action.date); return;
     case "view": state.view = action.view; return;
-    case "new": action.draft ? createEvent(action.draft) : openNewEditor(); return;
+    case "new": action.draft ? createEvent(action.draft) : openNewEditor(action.kind); return;
     case "edit": editSelected(); return;
     case "delete": confirmDelete(); return;
     case "complete": completeSelected(action.completed); return;
@@ -297,6 +299,19 @@ function handleEditorKey(key: KeyEvent): void {
   if (key.type === "up") { moveEditorField(editor, -1); return; }
   if (key.type === "down") { moveEditorField(editor, 1); return; }
   const current = () => editor.fields[editor.active]!;
+  if (current().key === "itemKind" && (key.type === "left" || key.type === "right" || key.type === "enter" || key.char === " " || (editor.mode === "normal" && (key.char === "h" || key.char === "l")))) {
+    setEditorItemKind(editor, editorItemKind(editor) === "event" ? "deadline" : "event");
+    return;
+  }
+  if (current().key === "itemKind" && (key.type === "char" || key.type === "paste" || key.type === "backspace" || key.type === "delete")) {
+    if (key.char === "d") setEditorItemKind(editor, "deadline");
+    else if (key.char === "e") setEditorItemKind(editor, "event");
+    else if (key.char === "j" && editor.mode === "normal") moveEditorField(editor, 1);
+    else if (key.char === "k" && editor.mode === "normal") moveEditorField(editor, -1);
+    else if (key.char === "q" && editor.mode === "normal") state.editor = null;
+    else if ((key.char === "i" || key.char === "a") && editor.mode === "normal") editor.mode = "insert";
+    return;
+  }
   if (editor.mode === "insert") {
     if (key.type === "escape") { editor.mode = "normal"; editor.cursor = Math.max(0, Math.min(editor.cursor, current().value.length - 1)); return; }
     if (key.type === "enter") { moveEditorField(editor, 1); return; }
@@ -350,7 +365,9 @@ function handlePromptKey(key: KeyEvent): void {
 function moveSelectedEvent(amount: number): void {
   const events = eventsOnSelectedDate(state);
   if (!events.length) return;
-  state.selectedEventIndex = (state.selectedEventIndex + amount + events.length) % events.length;
+  state.selectedEventIndex = state.dayOpen
+    ? moveScheduleSelection(daySchedule(events, state.selectedDate).rows, state.selectedEventIndex, amount)
+    : (state.selectedEventIndex + amount + events.length) % events.length;
   state.detailScroll = 0;
 }
 
@@ -524,6 +541,11 @@ function handleMouse(event: MouseEvent): void {
     if (field) {
       syncEditorDates(editor);
       const item = editor.fields[field.index]!;
+      if (item.key === "itemKind") {
+        editor.active = field.index;
+        setEditorItemKind(editor, editorItemKind(editor) === "event" ? "deadline" : "event");
+        scheduleRender(); return;
+      }
       const oldCursor = editor.active === field.index ? editor.cursor : 0;
       const displayed = item.value.replace(/\n/g, "↵");
       const window = inputWindow(displayed, oldCursor, field.right - field.left + 1);
