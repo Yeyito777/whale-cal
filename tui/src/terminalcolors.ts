@@ -1,6 +1,15 @@
 const ESC = "\x1b[";
 export type TerminalColorLevel = "truecolor" | "256" | "16";
 const LEVELS = [0, 95, 135, 175, 215, 255] as const;
+// Match Exocortex's nearest-palette conversion, including bright-black gray.
+const ANSI_RGB = [
+  [0, 0, 0], [205, 0, 0], [0, 205, 0], [205, 205, 0],
+  [0, 0, 238], [205, 0, 205], [0, 205, 205], [229, 229, 229],
+  [127, 127, 127], [255, 0, 0], [0, 255, 0], [255, 255, 0],
+  [92, 92, 255], [255, 0, 255], [0, 255, 255], [255, 255, 255],
+] as const;
+const distance = (r: number, g: number, b: number, pr: number, pg: number, pb: number) =>
+  (r - pr) ** 2 + (g - pg) ** 2 + (b - pb) ** 2;
 
 function nearest(value: number): number {
   let best = 0;
@@ -12,15 +21,23 @@ function nearest(value: number): number {
 
 function xterm(r: number, g: number, b: number): number {
   const ri = nearest(r), gi = nearest(g), bi = nearest(b);
-  return 16 + 36 * ri + 6 * gi + bi;
+  const cube = 16 + 36 * ri + 6 * gi + bi;
+  // Neutral colors benefit from the gray ramp; keep chromatic dark blues blue.
+  if (Math.max(r, g, b) - Math.min(r, g, b) > 12) return cube;
+  const grayIndex = Math.max(0, Math.min(23, Math.round(((r + g + b) / 3 - 8) / 10)));
+  const gray = 8 + grayIndex * 10;
+  return distance(r, g, b, gray, gray, gray) < distance(r, g, b, LEVELS[ri]!, LEVELS[gi]!, LEVELS[bi]!)
+    ? 232 + grayIndex : cube;
 }
 
 function ansi16(kind: 38 | 48, r: number, g: number, b: number): string {
-  const bright = Math.max(r, g, b) > 180;
-  const index = (r > 100 ? 1 : 0) | (g > 100 ? 2 : 0) | (b > 100 ? 4 : 0);
-  const base = kind === 38 ? (bright ? 90 : 30) : (bright ? 100 : 40);
-  // ANSI's bit ordering is red=1, green=2, blue=4.
-  return `${ESC}${base + index}m`;
+  let index = 0, best = Infinity;
+  for (const [i, [pr, pg, pb]] of ANSI_RGB.entries()) {
+    const dist = distance(r, g, b, pr, pg, pb);
+    if (dist < best) { best = dist; index = i; }
+  }
+  const base = kind === 38 ? (index < 8 ? 30 : 90) : (index < 8 ? 40 : 100);
+  return `${ESC}${base + index % 8}m`;
 }
 
 export function detectColorLevel(): TerminalColorLevel {

@@ -3,7 +3,8 @@ import type { AppState, PromptState } from "./state";
 
 /** The sidebar and main panel are peers; the prompt is an inner main focus. */
 export function isPromptFocused(state: AppState): state is AppState & { prompt: PromptState } {
-  return state.focus === "calendar" && state.mainFocus === "prompt" && !!state.prompt;
+  return state.focus === "calendar" && state.mainFocus === "prompt" && !!state.prompt
+    && !state.editor && !state.helpOpen && !state.confirmDelete;
 }
 
 function leaveInput(state: AppState): void {

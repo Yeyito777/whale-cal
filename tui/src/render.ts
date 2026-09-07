@@ -5,6 +5,7 @@ import {
 import type { Calendar, DateKey, EventOccurrence } from "@whale-cal/shared/types";
 import { COMMANDS } from "./commands";
 import { isPromptFocused } from "./focus";
+import { stylePromptText } from "./prompt-style";
 import { refreshCompletion } from "./completion";
 import { completionMenu } from "./completion-menu";
 import { renderStatusline, STATUSLINE_HEIGHT } from "./statusline";
@@ -370,25 +371,19 @@ function renderPromptSeparator(state: AppState, borderColor: string): string {
 
 function promptRendering(state: AppState): { line: string; cursor: { row: number; col: number } | null } {
   const row = state.rows - STATUSLINE_HEIGHT - 1;
+  const focused = isPromptFocused(state);
   if (!state.prompt) {
-    const pending = state.pendingKeys ? ` ${theme.warning}${state.pendingKeys}` : "";
-    return { line: segment(`${theme.vimNormal} N ${theme.text}❯${pending}`, state.cols), cursor: null };
+    const pending = state.pendingKeys ? ` ${state.pendingKeys}` : "";
+    return { line: segment(`${theme.muted} N ❯${pending}`, state.cols), cursor: null };
   }
   const modeLabel = state.prompt.mode === "insert" ? "I" : "N";
-  const modeColor = state.prompt.mode === "insert" ? theme.vimInsert : theme.vimNormal;
+  const modeColor = !focused ? theme.muted : state.prompt.mode === "insert" ? theme.vimInsert : theme.vimNormal;
   const prefix = ` ${modeLabel} ❯ `, max = Math.max(1, state.cols - width(prefix));
   const window = inputWindow(state.prompt.text, state.prompt.cursor, max);
-  let shown = window.text;
-  if (state.prompt.selectionAnchor !== undefined) {
-    const start = Math.min(state.prompt.selectionAnchor, state.prompt.cursor);
-    const end = Math.max(state.prompt.selectionAnchor, state.prompt.cursor);
-    shown = [...new Intl.Segmenter(undefined, { granularity: "grapheme" }).segment(window.text)].map(item =>
-      item.index + window.start >= start && item.index + window.start <= end
-        ? `${theme.selectionBg}${item.segment}${theme.appBg}` : item.segment).join("");
-  }
+  const shown = stylePromptText(state.prompt, window, focused);
   return {
-    line: segment(`${modeColor} ${modeLabel} ${theme.text}❯ ${theme.command}${shown}`, state.cols),
-    cursor: isPromptFocused(state) && !state.editor && !state.helpOpen && !state.confirmDelete ? { row, col: width(prefix) + window.column + 1 } : null,
+    line: segment(`${modeColor} ${modeLabel} ${focused ? theme.accent : theme.muted}❯ ${shown}`, state.cols),
+    cursor: focused ? { row, col: width(prefix) + window.column + 1 } : null,
   };
 }
 
@@ -428,7 +423,7 @@ export function buildFrame(state: AppState): { rows: string[]; cursor: string } 
   for (let index = 0; index < bodyHeight; index++) rows[bodyTop - 1 + index] = (sidebar[index] ?? "") + (main[index] ?? segment("", mainWidth));
 
   const prompt = promptRendering(state);
-  const borderColor = state.focus === "calendar" ? theme.borderFocused : theme.borderUnfocused;
+  const borderColor = isPromptFocused(state) ? theme.accent : theme.borderUnfocused;
   rows[state.rows - STATUSLINE_HEIGHT - 3] = renderPromptSeparator(state, borderColor);
   rows[state.rows - STATUSLINE_HEIGHT - 2] = prompt.line;
   rows[state.rows - STATUSLINE_HEIGHT - 1] = segment(`${borderColor}${"─".repeat(state.cols)}`, state.cols);

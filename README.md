@@ -125,6 +125,10 @@ Ctrl+S to save; they cannot be bypassed by focus shortcuts. The yank register
 and history belong to the current TUI session.
 
 The prompt is framed by matching horizontal separators above and below it.
+The frame, mode indicator, and draft are muted when the prompt is unfocused
+(including behind a dialog). A focused prompt uses Whale's blue accent frame,
+white text, and pale-blue highlighting for recognized commands and subcommands;
+event titles and other free-form arguments remain white.
 Below the bottom separator, an Exocortex-style two-line status block shows `Next Event:`
 on its first row and the live `Happens in: 1h30m` countdown underneath, with muted
 labels and accent-colored values. It uses the current local time and visible calendars,
