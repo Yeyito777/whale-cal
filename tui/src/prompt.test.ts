@@ -96,8 +96,9 @@ test("completion popup keeps prompt, status and mouse targets separate", () => {
   state.cols = 54; state.rows = 18;
   const frame = buildFrame(state);
   expect(frame.rows).toHaveLength(18);
-  expect(frame.rows[16]).toContain("❯");
-  expect(frame.rows[17]).toContain("Next Event:");
-  expect(state.layout.actions.filter(hit => hit.action.startsWith("complete:")).every(hit => hit.row < 16)).toBe(true);
-  expect(frame.cursor).toContain("17;");
+  expect(frame.rows[15]).toContain("❯");
+  expect(frame.rows[16]).toContain("Next Event:");
+  expect(frame.rows[17]).toContain("Happens in:");
+  expect(state.layout.actions.filter(hit => hit.action.startsWith("complete:")).every(hit => hit.row < 15)).toBe(true);
+  expect(frame.cursor).toContain("16;");
 });

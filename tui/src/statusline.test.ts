@@ -35,13 +35,18 @@ test("status blocks fit narrow terminals and honor hidden calendars", () => {
   state.cols = 54; state.connected = true; state.selectedDate = "2040-01-01";
   state.database.events = [event({ title: "A very long title 東京 👩‍💻 that needs truncation" })];
   state.database.calendars = [{ id: "cal", name: "Work", visible: true, color: "#fff", createdAt: "", updatedAt: "" }];
-  let line = renderStatusline(state, now);
-  expect(width(line)).toBe(54);
-  expect(stripAnsi(line)).toContain("Happens in: 1h30m");
+  const lines = renderStatusline(state, now);
+  expect(lines).toHaveLength(2);
+  expect(lines.every(line => width(line) === 54)).toBe(true);
+  expect(stripAnsi(lines[0])).toStartWith("  Next Event: ");
+  expect(stripAnsi(lines[0])).not.toContain("Happens in:");
+  expect(stripAnsi(lines[1])).toContain("  Happens in: 1h30m");
+  expect(lines.join("")).not.toContain("│");
   state.database.calendars[0]!.visible = false;
-  expect(stripAnsi(renderStatusline(state, now))).toContain("none scheduled");
+  expect(stripAnsi(renderStatusline(state, now)[0])).toContain("none scheduled");
+  expect(stripAnsi(renderStatusline(state, now)[1])).toContain("Happens in: —");
   state.connected = false;
-  expect(stripAnsi(renderStatusline(state, now))).toContain("offline");
+  expect(stripAnsi(renderStatusline(state, now)[0])).toContain("offline");
 });
 
 test("countdown follows local wall-time timestamps over DST changes", () => {

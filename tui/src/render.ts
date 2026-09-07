@@ -5,7 +5,7 @@ import {
 import type { Calendar, DateKey, EventOccurrence } from "@whale-cal/shared/types";
 import { COMMANDS } from "./commands";
 import { refreshCompletion } from "./completion";
-import { renderStatusline } from "./statusline";
+import { renderStatusline, STATUSLINE_HEIGHT } from "./statusline";
 import { cursorAt, flushFrame, overlayAt } from "./frame";
 import {
   eventsOnSelectedDate, selectedCalendar, selectedOccurrence, type AppState, type EditorState, type Notice, visibleEvents,
@@ -283,7 +283,7 @@ function renderEditorOverlay(state: AppState, rows: string[], editor: EditorStat
   const boxWidth = Math.min(82, state.cols - 6);
   const valueWidth = boxWidth - 17;
   const boxHeight = editor.fields.length + 4;
-  const top = Math.max(2, Math.floor((state.rows - boxHeight) / 2));
+  const top = Math.max(1, Math.floor((state.rows - STATUSLINE_HEIGHT - 1 - boxHeight) / 2));
   const left = Math.max(1, Math.floor((state.cols - boxWidth) / 2) + 1);
   const put = (row: number, content: string) => putOverlayRow(rows, row, left, boxWidth, content);
   put(top, titledOverlayBorder(editor.kind === "create" ? "New event" : "Edit event", boxWidth));
@@ -363,7 +363,7 @@ function renderPromptSeparator(state: AppState, borderColor: string): string {
 }
 
 function promptRendering(state: AppState): { line: string; cursor: { row: number; col: number } | null } {
-  const row = state.rows - 1;
+  const row = state.rows - STATUSLINE_HEIGHT;
   if (!state.prompt) {
     const pending = state.pendingKeys ? ` ${theme.warning}${state.pendingKeys}` : "";
     return { line: segment(`${theme.vimNormal} N ${theme.text}❯${pending}`, state.cols), cursor: null };
@@ -391,10 +391,10 @@ function renderCompletion(state: AppState, rows: string[]): void {
   refreshCompletion(state.prompt, state);
   const menu = state.prompt.completion;
   if (!menu) return;
-  const capacity = Math.min(6, menu.items.length, state.rows - 9);
+  const capacity = Math.min(6, menu.items.length, state.rows - STATUSLINE_HEIGHT - 8);
   const start = Math.max(0, Math.min(menu.selection - capacity + 1, menu.items.length - capacity));
   const boxWidth = Math.min(78, state.cols - 8), left = 5;
-  const top = state.rows - 4 - capacity - 1;
+  const top = state.rows - STATUSLINE_HEIGHT - 4 - capacity;
   putOverlayRow(rows, top, left, boxWidth, titledOverlayBorder("Suggestions", boxWidth));
   for (let i = 0; i < capacity; i++) {
     const index = start + i, item = menu.items[index]!;
@@ -415,7 +415,7 @@ export function buildFrame(state: AppState): { rows: string[]; cursor: string } 
     return { rows, cursor: cursorAt(1, 1, cursorBlock, false) };
   }
   rows[0] = renderTopbar(state);
-  const footerTop = Math.max(3, state.rows - 2);
+  const footerTop = Math.max(3, state.rows - STATUSLINE_HEIGHT - 1);
   const bodyTop = 3;
   const bodyHeight = Math.max(0, footerTop - bodyTop);
   const sidebarWidth = state.sidebarOpen && state.cols >= 76 ? Math.min(31, Math.floor(state.cols * 0.32)) : 0;
@@ -430,9 +430,9 @@ export function buildFrame(state: AppState): { rows: string[]; cursor: string } 
 
   const prompt = promptRendering(state);
   const borderColor = state.focus === "calendar" ? theme.borderFocused : theme.borderUnfocused;
-  rows[state.rows - 3] = renderPromptSeparator(state, borderColor);
-  rows[state.rows - 2] = prompt.line;
-  rows[state.rows - 1] = renderStatusline(state);
+  rows[state.rows - STATUSLINE_HEIGHT - 2] = renderPromptSeparator(state, borderColor);
+  rows[state.rows - STATUSLINE_HEIGHT - 1] = prompt.line;
+  for (const [index, line] of renderStatusline(state).entries()) rows[state.rows - STATUSLINE_HEIGHT + index] = line;
 
   let overlayCursor: { row: number; col: number } | null = null;
   if (state.dayOpen) renderDayOverlay(state, rows);

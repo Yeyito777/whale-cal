@@ -111,8 +111,9 @@ Ctrl+P/N browses session command history and restores unfinished input; Up/Down
 does the same when no popup is open. Ctrl+J/K still changes panel focus from
 normal mode. The yank register and history belong to the current TUI session.
 
-Below the prompt, a compact statusline shows the next event and its live
-`Happens in: 1h30m` countdown. It uses the current local time and visible calendars,
+Below the prompt, an Exocortex-style two-line status block shows `Next Event:`
+on its first row and the live `Happens in: 1h30m` countdown underneath, with muted
+labels and accent-colored values. It uses the current local time and visible calendars,
 not the selected date, and respects recurrence limits. All-day events start at
 local midnight; already-started events are skipped. Titles shorten on narrow
 terminals so the countdown stays visible. Connection status remains in the top bar.

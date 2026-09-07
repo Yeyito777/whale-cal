@@ -3,6 +3,7 @@ import type { CalendarEvent, CalendarView, EventDraft, EventPatch } from "@whale
 import { DaemonClient, type ClientEvent } from "./client";
 import { runCommand, type CommandAction } from "./commands";
 import { PromptController } from "./prompt";
+import { STATUSLINE_HEIGHT } from "./statusline";
 import { cycleCompletion } from "./completion";
 import { invalidateFrame } from "./frame";
 import { InputBuffer, parseInput, type KeyEvent, type MouseEvent } from "./input";
@@ -474,7 +475,7 @@ function handleMouse(event: MouseEvent): void {
         cycleCompletion(prompt, 1);
         prompt.completion = null;
         scheduleRender();
-      } else if (event.row === state.rows - 1) {
+      } else if (event.row === state.rows - STATUSLINE_HEIGHT) {
         const window = inputWindow(prompt.text, prompt.cursor, state.cols - 5);
         let position = window.start;
         while (position < prompt.text.length && width(prompt.text.slice(window.start, nextGrapheme(prompt.text, position))) <= event.col - 6) position = nextGrapheme(prompt.text, position);
@@ -514,7 +515,7 @@ function handleMouse(event: MouseEvent): void {
     return;
   }
   if (event.action === "press" && event.button === 0) {
-    if (event.row === state.rows - 1) {
+    if (event.row === state.rows - STATUSLINE_HEIGHT) {
       state.prompt = { text: "", cursor: 0, mode: "insert" };
       scheduleRender(); return;
     }

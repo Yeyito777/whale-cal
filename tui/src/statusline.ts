@@ -48,13 +48,16 @@ export function countdown(milliseconds: number): string {
   return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, "0")}m`;
 }
 
-export function renderStatusline(state: AppState, now = Date.now()): string {
+export const STATUSLINE_HEIGHT = 2;
+
+export function renderStatusline(state: AppState, now = Date.now()): [string, string] {
   const next = nextEvent(visibleEvents(state), now);
-  if (!state.connected) return `${theme.muted}${pad(" Next Event: offline", state.cols)}${theme.reset}`;
-  if (!next) return `${theme.muted}${pad(" Next Event: none scheduled", state.cols)}${theme.reset}`;
-  const right = ` Happens in: ${countdown(next.timestamp - now)} `;
-  const suffix = next.event.startTime ? "" : " · All day";
-  const available = Math.max(1, state.cols - width(right) - 3);
-  const left = pad(` Next Event: ${truncate(next.event.title + suffix, Math.max(1, available - 13))}`, available);
-  return `${theme.sidebarBg}${theme.muted}${left}${theme.accent} │ ${theme.muted}${right}${theme.reset}`;
+  const title = !state.connected ? "offline" : !next ? "none scheduled"
+    : next.event.title + (next.event.startTime ? "" : " · All day");
+  const remaining = state.connected && next ? countdown(next.timestamp - now) : "—";
+  const row = (label: string, value: string) => {
+    const content = `${theme.muted}${label}${theme.accent}${truncate(value, Math.max(0, state.cols - width(label)))}`;
+    return `${theme.appBg}${pad(content, state.cols)}${theme.reset}`;
+  };
+  return [row("  Next Event: ", title), row("  Happens in: ", remaining)];
 }
