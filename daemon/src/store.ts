@@ -5,8 +5,7 @@ import { isDateKey, isTimeKey } from "@whale-cal/shared/dates";
 import type { Calendar, CalendarDatabase, CalendarEvent, EventDraft, EventPatch, RecurrenceRule } from "@whale-cal/shared/types";
 import { databasePath } from "@whale-cal/shared/paths";
 import { log } from "./log";
-
-const COLORS = ["#1d9bf0", "#48cae4", "#c792ea", "#50c878", "#f4b860", "#ff6b6b"];
+import { CALENDAR_COLORS, nextCalendarColor } from "./calendar-colors";
 
 function nowIso(): string { return new Date().toISOString(); }
 
@@ -15,7 +14,7 @@ function defaultDatabase(): CalendarDatabase {
   return {
     version: 1,
     revision: 0,
-    calendars: [{ id: randomUUID(), name: "Personal", color: COLORS[0]!, visible: true, createdAt: now, updatedAt: now }],
+    calendars: [{ id: randomUUID(), name: "Personal", color: CALENDAR_COLORS[0], visible: true, createdAt: now, updatedAt: now }],
     events: [],
   };
 }
@@ -174,7 +173,7 @@ export class CalendarStore {
     if (this.db.calendars.some(item => item.name.toLowerCase() === name.toLowerCase())) {
       throw new Error("A calendar with that name already exists.");
     }
-    const color = colorValue?.trim() || COLORS[this.db.calendars.length % COLORS.length]!;
+    const color = colorValue?.trim() || nextCalendarColor(this.db.calendars.map(calendar => calendar.color));
     if (!/^#[0-9a-f]{6}$/i.test(color)) throw new Error("Calendar color must be #rrggbb.");
     const now = nowIso();
     const calendar: Calendar = { id: randomUUID(), name, color, visible: true, createdAt: now, updatedAt: now };

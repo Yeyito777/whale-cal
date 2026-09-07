@@ -46,6 +46,8 @@ Machine interface:
   a user-only Unix socket; mutations are canonicalized and broadcast by cald.
 
 Defaults: 'cal events' lists today through 30 days from today, inclusive.
+Omit --color when creating a calendar to pick a distinct unused color automatically.
+Use --color only for an intentional custom color.
 Delete commands require --yes. IDs are stable base-event/calendar IDs.`;
 
 class UsageError extends Error {}

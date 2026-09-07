@@ -15,6 +15,22 @@ function store(): { store: CalendarStore; path: string } {
 }
 
 describe("CalendarStore", () => {
+  test("automatic colors survive deletion, hidden calendars, custom colors, and reload", () => {
+    const instance = store();
+    const original = instance.store.snapshot().calendars[0]!;
+    const custom = instance.store.createCalendar("Custom", "#C792EA");
+    instance.store.updateCalendar(custom.id, { visible: false });
+    const removed = instance.store.createCalendar("Remove me");
+    instance.store.deleteCalendar(removed.id);
+    const reopened = new CalendarStore(instance.path);
+    for (let i = 0; i < 30; i++) reopened.createCalendar(`Calendar ${i}`);
+    const calendars = reopened.snapshot().calendars;
+    expect(new Set(calendars.map(c => c.color.toLowerCase())).size).toBe(calendars.length);
+    expect(calendars.find(c => c.id === original.id)!.color).toBe(original.color);
+    expect(calendars.find(c => c.id === custom.id)!.color).toBe("#C792EA");
+    // Explicit user choices remain valid, even when deliberately matching.
+    expect(reopened.createCalendar("Matching", original.color).color).toBe(original.color);
+  });
   test("persists an atomically created event", () => {
     const instance = store();
     const calendarId = instance.store.snapshot().calendars[0]!.id;

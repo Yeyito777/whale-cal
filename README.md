@@ -81,6 +81,13 @@ week boundaries and overflow counts for busy days.
 Today has a solid Whale-blue date header with bold white text (and a `Today`
 label where space allows), separate from the selected day's dark highlight.
 
+New calendars automatically choose an unused color from 24 bright accents,
+favoring colors furthest from the existing ones. Additional colors are generated
+once that palette is used up instead of repeating the same cycle. Hidden and
+custom-colored calendars are included when choosing; deleting a calendar frees
+its color for reuse. Existing colors and explicit `--color '#rrggbb'` choices
+are preserved. Omit `--color` for automatic assignment, including via the CLI.
+
 Pressing `Enter` on the calendar opens a detailed day panel. Within that panel,
 `j`/`k` selects an event, `h`/`l` moves between days, and `Enter` or `e` edits
 that selected event. `Esc` returns to the calendar. A day uses a split event list
