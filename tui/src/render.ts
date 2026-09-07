@@ -6,7 +6,7 @@ import type { Calendar, DateKey, EventOccurrence } from "@whale-cal/shared/types
 import { COMMANDS } from "./commands";
 import { isPromptFocused } from "./focus";
 import { stylePromptText } from "./prompt-style";
-import { daySchedule, durationLabel, scheduleWindow } from "./day-schedule";
+import { daySchedule, durationLabel, scheduleNow, scheduleWindow } from "./day-schedule";
 import { refreshCompletion } from "./completion";
 import { completionMenu } from "./completion-menu";
 import { renderStatusline, STATUSLINE_HEIGHT } from "./statusline";
@@ -264,8 +264,11 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
   };
   const todayBadge = state.selectedDate === todayKey() ? todayHeader("Today", 7) + " " : " ";
   putList(0, `${todayBadge}${theme.text}${theme.bold}${formatLongDate(state.selectedDate)}${theme.boldOff}`);
-  const capacity = Math.max(1, listHeight - 3);
   const schedule = daySchedule(occurrences, state.selectedDate);
+  const now = scheduleNow(schedule.rows, state.selectedDate);
+  const missingEnds = occurrences.filter(({ event }) => event.kind !== "deadline" && event.startTime && !event.endTime).length;
+  const listTop = now && missingEnds ? 4 : 3;
+  const capacity = Math.max(1, listHeight - listTop);
   const start = scheduleWindow(schedule.rows, state.selectedEventIndex, capacity);
   const range = schedule.rows.length > capacity ? ` · ${start + 1}–${Math.min(schedule.rows.length, start + capacity)} / ${schedule.rows.length}` : "";
   const deadlines = occurrences.filter(({ event }) => event.kind === "deadline").length;
@@ -273,23 +276,29 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
   const counts = [events || !deadlines ? `${events} event${events === 1 ? "" : "s"}` : "", deadlines ? `${deadlines} deadline${deadlines === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
   putList(1, `${theme.muted} ${counts} · ${durationLabel(schedule.freeMinutes)} free${range}`);
   if (!occurrences.length) putList(2, `${theme.muted} Nothing scheduled. A little breathing room.`);
-  const missingEnds = occurrences.filter(({ event }) => event.kind !== "deadline" && event.startTime && !event.endTime).length;
-  if (missingEnds) putList(2, `${theme.muted} ${missingEnds} missing end time${missingEnds === 1 ? "" : "s"} · excluded from free-time total`);
+  if (now) {
+    const context = now.rows.map(item => item.kind === "free" ? "Free time" : occurrences[item.eventIndex]!.event.title).join(" + ");
+    putList(2, `${theme.accent}${theme.bold} Now ${now.time}${theme.boldOff}${theme.text} · ${context}`);
+  }
+  if (missingEnds) putList(now ? 3 : 2, `${theme.muted} ${missingEnds} missing end time${missingEnds === 1 ? "" : "s"} · excluded from free-time total`);
   for (let i = start; i < Math.min(schedule.rows.length, start + capacity); i++) {
     const item = schedule.rows[i]!;
-    const row = 3 + i - start;
+    const row = listTop + i - start;
+    const current = now?.rows.includes(item) ?? false;
+    const timeStyle = current ? theme.accent + theme.bold : theme.muted;
+    const nowTag = current ? `${theme.accent}${theme.bold}Now${theme.boldOff} ` : "";
     if (item.kind === "free") {
-      putList(row, `${theme.muted}   ${pad(item.time, 13)} ${theme.success}○ Free${theme.muted} · ${durationLabel(item.end - item.start)}`);
+      putList(row, `${timeStyle}   ${pad(item.time, 13)}${theme.boldOff} ${nowTag}${theme.success}○ Free${theme.muted} · ${durationLabel(item.end - item.start)}`);
       continue;
     }
     const occurrence = occurrences[item.eventIndex]!;
     const active = item.eventIndex === state.selectedEventIndex;
     const calendar = calendarFor(state, occurrence.event.calendarId);
-    const title = truncate(occurrence.event.title, listWidth - 21);
+    const title = truncate(occurrence.event.title, listWidth - 21 - (current ? 4 : 0));
     const done = eventIsCompleted(occurrence.event, occurrence.startDate);
     const overdue = deadlineIsOverdue(occurrence.event, occurrence.startDate);
     const styledTitle = done ? `${theme.muted}✓ ${theme.strike}${title}${theme.strikeOff}` : `${overdue ? theme.warning : eventColor(calendar?.color ?? "#1d9bf0")}${occurrence.event.kind === "deadline" ? "◆" : "●"} ${overdue ? theme.warning : theme.text}${title}`;
-    const content = `${active ? theme.accent : theme.muted} ${active ? "▸" : " "} ${theme.muted}${pad(item.time, 13)} ${styledTitle}`;
+    const content = `${active ? theme.accent : theme.muted} ${active ? "▸" : " "} ${timeStyle}${pad(item.time, 13)}${theme.boldOff} ${nowTag}${styledTitle}`;
     putList(row, content, active);
     state.layout.eventRows.push({ index: item.eventIndex, left, right: left + listWidth - 1, row: top + row + 1 });
   }

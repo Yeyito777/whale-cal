@@ -108,6 +108,12 @@ notes when these entries are excluded from the free-time total; add an end time
 to reserve a duration. Overnight events with known end times are clipped to
 the inspected day's boundaries.
 
+Today's day view shows a live `Now HH:MM` summary and blue `Now` markers on the
+current event(s) or free-time block. It uses the same local wall-clock time as
+the calendar, updates automatically, and leaves your selection and scroll position
+alone. Overlapping events are all marked; deadlines and durationless markers
+are not treated as ongoing blocks. Other dates do not show a Now marker.
+
 The event form uses `Tab`/`Shift+Tab` (or `j`/`k` in normal mode) to move between
 fields, `i`/`a` to enter insert mode, `Esc` to return to normal mode, and
 `Ctrl+S` or `Enter` in normal mode to save.

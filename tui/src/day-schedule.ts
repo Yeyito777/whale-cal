@@ -1,7 +1,8 @@
 import type { DateKey, EventOccurrence } from "@whale-cal/shared/types";
+import { todayKey } from "@whale-cal/shared/dates";
 
 export type ScheduleRow =
-  | { kind: "event"; eventIndex: number; time: string }
+  | { kind: "event"; eventIndex: number; start: number; end: number; time: string }
   | { kind: "free"; start: number; end: number; time: string };
 
 const minute = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
@@ -37,11 +38,19 @@ export function daySchedule(occurrences: readonly EventOccurrence[], date: DateK
   };
   for (const event of events) {
     free(busyUntil, event.start);
-    rows.push({ kind: "event", eventIndex: event.eventIndex, time: event.time });
+    rows.push({ kind: "event", eventIndex: event.eventIndex, start: event.start, end: event.end, time: event.time });
     busyUntil = Math.max(busyUntil, event.end);
   }
   free(busyUntil, 1440);
   return { rows, freeMinutes };
+}
+
+/** Half-open local-time intervals: overlapping reservations can both be current.
+ * Point markers (deadlines, all-day notes, missing ends) are never a current block. */
+export function scheduleNow(rows: readonly ScheduleRow[], date: DateKey, now = new Date()): { time: string; rows: ScheduleRow[] } | null {
+  if (date !== todayKey(now)) return null;
+  const minutes = now.getHours() * 60 + now.getMinutes();
+  return { time: clock(minutes), rows: rows.filter(row => row.start <= minutes && minutes < row.end) };
 }
 
 /** Scroll by schedule rows but keep keyboard selection attached to real events. */
