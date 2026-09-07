@@ -3,6 +3,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CalendarStore } from "./store";
+import { eventIsCompleted } from "@whale-cal/shared/dates";
 
 const roots: string[] = [];
 afterEach(() => { while (roots.length) rmSync(roots.pop()!, { recursive: true, force: true }); });
@@ -15,6 +16,45 @@ function store(): { store: CalendarStore; path: string } {
 }
 
 describe("CalendarStore", () => {
+  test("completion persists, is reversible and idempotent, and survives ordinary edits", () => {
+    const instance = store();
+    const event = instance.store.createEvent({ title: "Finish homework", startDate: "2026-09-09" });
+    expect(eventIsCompleted(event)).toBe(false);
+    expect(instance.store.completeEvent(event.id, true).completed).toBe(true);
+    const revision = instance.store.revision;
+    instance.store.completeEvent(event.id, true);
+    expect(instance.store.revision).toBe(revision);
+    const reopened = new CalendarStore(instance.path);
+    expect(reopened.updateEvent(event.id, { title: "Updated title" }).completed).toBe(true);
+    expect(reopened.completeEvent(event.id, false).completed).toBe(false);
+    expect(() => reopened.completeEvent(event.id, "yes" as unknown as boolean)).toThrow("boolean");
+    expect(() => reopened.completeEvent(event.id, true, "2026-09-10")).toThrow("No occurrence");
+  });
+
+  test("recurring completion belongs to one occurrence, including multi-day events", () => {
+    const instance = store();
+    const event = instance.store.createEvent({ title: "Weekly", startDate: "2026-09-01", endDate: "2026-09-02", recurrence: { frequency: "weekly", interval: 1, count: 3 } });
+    expect(() => instance.store.completeEvent(event.id, true)).toThrow("requires");
+    expect(() => instance.store.completeEvent(event.id, true, "2026-09-09")).toThrow("No occurrence");
+    expect(() => instance.store.completeEvent(event.id, true, "2026-09-22")).toThrow("No occurrence");
+    const done = instance.store.completeEvent(event.id, true, "2026-09-08");
+    expect(eventIsCompleted(done, "2026-09-08")).toBe(true);
+    expect(eventIsCompleted(done, "2026-09-01")).toBe(false);
+    expect(eventIsCompleted(done, "2026-09-15")).toBe(false);
+    const updated = new CalendarStore(instance.path).updateEvent(event.id, { notes: "New notes" });
+    expect(updated.completedDates).toEqual(["2026-09-08"]);
+    expect(instance.store.completeEvent(event.id, false, "2026-09-08").completedDates).toEqual([]);
+  });
+
+  test("turning a completed one-off into a series completes only its first occurrence", () => {
+    const instance = store();
+    const event = instance.store.createEvent({ title: "Task", startDate: "2026-09-01" });
+    instance.store.completeEvent(event.id, true);
+    const recurring = instance.store.updateEvent(event.id, { recurrence: { frequency: "weekly", interval: 1 } });
+    expect(recurring.completedDates).toEqual(["2026-09-01"]);
+    expect(eventIsCompleted(recurring, "2026-09-08")).toBe(false);
+    expect(instance.store.updateEvent(event.id, { recurrence: null }).completed).toBe(true);
+  });
   test("automatic colors survive deletion, hidden calendars, custom colors, and reload", () => {
     const instance = store();
     const original = instance.store.snapshot().calendars[0]!;

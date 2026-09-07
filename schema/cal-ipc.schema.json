@@ -94,6 +94,8 @@
         "location": { "type": "string", "maxLength": 500 },
         "notes": { "type": "string", "maxLength": 10000 },
         "recurrence": { "$ref": "#/$defs/recurrence" },
+        "completed": { "type": "boolean", "description": "Completion state for a non-recurring event; absent means false." },
+        "completedDates": { "type": "array", "items": { "$ref": "#/$defs/date" }, "uniqueItems": true, "description": "Completed recurring occurrence start dates." },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       }
@@ -180,6 +182,15 @@
           "type": "object", "additionalProperties": false,
           "required": ["type", "reqId", "id"],
           "properties": { "type": { "const": "delete_event" }, "reqId": { "$ref": "#/$defs/requestId" }, "id": { "type": "string" } }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["type", "reqId", "id", "completed"],
+          "properties": {
+            "type": { "const": "complete_event" }, "reqId": { "$ref": "#/$defs/requestId" }, "id": { "type": "string" },
+            "completed": { "type": "boolean" },
+            "occurrenceDate": { "$ref": "#/$defs/date", "description": "Required for recurring events: the occurrence start date, not the inspected day of a multi-day event." }
+          }
         },
         {
           "type": "object", "additionalProperties": false,

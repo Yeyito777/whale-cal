@@ -7,6 +7,8 @@ export interface Theme {
   boldOff: string;
   dim: string;
   italic: string;
+  strike: string;
+  strikeOff: string;
   accent: string;
   text: string;
   muted: string;
@@ -37,6 +39,7 @@ const bg = (hex: string) => color(48, hex, level);
 /** Exocortex's default Whale palette, adapted to terminal color depth. */
 export const theme: Theme = {
   name: "whale",
+  strike: `${ESC}9m`, strikeOff: `${ESC}29m`,
   reset: `${ESC}0m`, bold: `${ESC}1m`, boldOff: `${ESC}22m`, dim: `${ESC}2m`, italic: `${ESC}3m`,
   accent: fg("#1d9bf0"), text: fg("#ffffff"), muted: fg("#646464"), error: `${ESC}31m`,
   warning: `${ESC}33m`, success: fg("#50c878"), goal: fg("#c792ea"), command: fg("#aed6fe"),

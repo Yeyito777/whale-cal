@@ -225,6 +225,7 @@ export class DaemonClient {
 
   createEvent(event: EventDraft): string { const reqId = randomUUID(); this.write({ type: "create_event", reqId, event }); return reqId; }
   updateEvent(id: string, patch: EventPatch): string { const reqId = randomUUID(); this.write({ type: "update_event", reqId, id, patch }); return reqId; }
+  completeEvent(id: string, completed: boolean, occurrenceDate: string): string { const reqId = randomUUID(); this.write({ type: "complete_event", reqId, id, completed, occurrenceDate }); return reqId; }
   deleteEvent(id: string): string { const reqId = randomUUID(); this.write({ type: "delete_event", reqId, id }); return reqId; }
   createCalendar(name: string, color?: string): string { const reqId = randomUUID(); this.write({ type: "create_calendar", reqId, name, ...(color ? { color } : {}) }); return reqId; }
   updateCalendar(id: string, patch: Partial<Pick<Calendar, "name" | "color" | "visible">>): string { const reqId = randomUUID(); this.write({ type: "update_calendar", reqId, id, patch }); return reqId; }

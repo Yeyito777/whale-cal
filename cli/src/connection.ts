@@ -12,6 +12,7 @@ const RESPONSE_TYPES: Partial<Record<Command["type"], Event["type"]>> = {
   get_event: "event_details",
   create_event: "event_created",
   update_event: "event_updated",
+  complete_event: "event_updated",
   delete_event: "event_deleted",
   create_calendar: "calendar_created",
   update_calendar: "calendar_updated",

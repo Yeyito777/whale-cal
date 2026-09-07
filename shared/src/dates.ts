@@ -121,6 +121,10 @@ export function eventIsAllDay(event: Pick<CalendarEvent, "startTime">): boolean 
   return !event.startTime;
 }
 
+export function eventIsCompleted(event: CalendarEvent, occurrenceDate = event.startDate): boolean {
+  return event.recurrence ? (event.completedDates ?? []).includes(occurrenceDate) : event.completed === true;
+}
+
 export function formatEventTime(event: Pick<CalendarEvent, "startTime" | "endTime">): string {
   if (!event.startTime) return "all-day";
   return event.endTime ? `${event.startTime}–${event.endTime}` : event.startTime;

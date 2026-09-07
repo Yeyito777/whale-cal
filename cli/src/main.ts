@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { randomUUID } from "node:crypto";
-import { addDays, formatEventTime, isDateKey, isTimeKey, todayKey } from "@whale-cal/shared/dates";
+import { addDays, eventIsCompleted, formatEventTime, isDateKey, isTimeKey, todayKey } from "@whale-cal/shared/dates";
 import type { Command, Event } from "@whale-cal/shared/protocol";
 import type { Calendar, CalendarEvent, EventDraft, EventPatch, RecurrenceRule } from "@whale-cal/shared/types";
 import { request, requestRaw } from "./connection";
@@ -17,6 +17,8 @@ Usage:
   cal event create --title TEXT --date YYYY-MM-DD [options]
   cal event update ID [options]
   cal event delete ID --yes [--json]
+  cal event complete ID [--date YYYY-MM-DD] [--json]
+  cal event reopen ID [--date YYYY-MM-DD] [--json]
   cal calendar create --name TEXT [--color '#rrggbb'] [--json]
   cal calendar update ID [--name TEXT] [--color '#rrggbb'] [--show|--hide] [--json]
   cal calendar delete ID --yes [--json]
@@ -38,6 +40,9 @@ Event update options:
   --calendar ID|NAME, --location TEXT, --notes-stdin, --repeat RULE,
   --until DATE, --count NUMBER, --all-day, --clear-location, --clear-notes,
   --clear-repeat
+
+Completion: --date is required for recurring events and identifies the occurrence
+start date. Completing one occurrence never completes the entire series.
 
 Machine interface:
   'cal schema' returns the daemon's JSON Schema for protocol version 1.
@@ -155,13 +160,15 @@ async function calendarId(value: string | undefined): Promise<string | undefined
 
 function eventLine(event: CalendarEvent, startDate = event.startDate, endDate = event.endDate, occurrenceId = event.id): string {
   const dates = endDate === startDate ? startDate : `${startDate}–${endDate}`;
-  return `${dates}  ${formatEventTime(event).padEnd(11)}  ${event.title}  [event:${event.id}] [occurrence:${occurrenceId}] [calendar:${event.calendarId}]`;
+  return `${dates}  ${formatEventTime(event).padEnd(11)}  ${eventIsCompleted(event, startDate) ? "[done] " : ""}${event.title}  [event:${event.id}] [occurrence:${occurrenceId}] [calendar:${event.calendarId}]`;
 }
 
 function printEventDetails(event: CalendarEvent): void {
   console.log(`Event ID:    ${event.id}`);
   console.log(`Calendar ID: ${event.calendarId}`);
   console.log(`Title:       ${event.title}`);
+  console.log(`Completion:  ${event.recurrence ? `${event.completedDates?.length ?? 0} occurrences completed` : event.completed ? "done" : "unfinished"}`);
+  if (event.recurrence && event.completedDates?.length) console.log(`Done dates:  ${event.completedDates.join(", ")}`);
   console.log(`When:        ${event.startDate}${event.endDate !== event.startDate ? ` through ${event.endDate}` : ""}, ${formatEventTime(event)}`);
   if (event.location) console.log(`Location:    ${event.location}`);
   if (event.recurrence) console.log(`Repeat:      ${event.recurrence.frequency}/${event.recurrence.interval}${event.recurrence.until ? ` until ${event.recurrence.until}` : ""}${event.recurrence.count ? ` count ${event.recurrence.count}` : ""}`);
@@ -281,6 +288,17 @@ async function eventUpdate(parsed: Parsed): Promise<void> {
   if (flag(parsed, "json")) printJson(response.event); else console.log(`Updated. Event ID: ${response.event.id}`);
 }
 
+async function eventCompletion(parsed: Parsed, completed: boolean): Promise<void> {
+  allowed(parsed, ["date", "json"]);
+  if (parsed.positionals.length !== 1) throw new UsageError("Completion requires exactly one base event ID.");
+  const occurrenceDate = option(parsed, "date");
+  if (occurrenceDate !== undefined && !isDateKey(occurrenceDate)) throw new UsageError("--date must be a real YYYY-MM-DD date.");
+  const response = await request({ type: "complete_event", reqId: reqId(), id: parsed.positionals[0]!, completed, ...(occurrenceDate ? { occurrenceDate } : {}) });
+  if (response.type !== "event_updated") throw new Error("Unexpected daemon response.");
+  if (flag(parsed, "json")) printJson(response.event);
+  else console.log(`${completed ? "Completed" : "Reopened"}. Event ID: ${response.event.id}${occurrenceDate ? ` · ${occurrenceDate}` : ""}`);
+}
+
 async function eventDelete(parsed: Parsed): Promise<void> {
   allowed(parsed, ["yes", "json"]);
   if (parsed.positionals.length !== 1) throw new UsageError("event delete requires exactly one event ID.");
@@ -361,7 +379,9 @@ async function main(argv: string[]): Promise<void> {
       else if (operation === "create") await eventCreate(parsed);
       else if (operation === "update") await eventUpdate(parsed);
       else if (operation === "delete") await eventDelete(parsed);
-      else throw new UsageError("event requires get, create, update, or delete.");
+      else if (operation === "complete") await eventCompletion(parsed, true);
+      else if (operation === "reopen") await eventCompletion(parsed, false);
+      else throw new UsageError("event requires get, create, update, delete, complete, or reopen.");
       return;
     }
     case "calendar": {

@@ -99,6 +99,11 @@ export function createHandler(server: DaemonServer, store: CalendarStore, lifecy
           event = { type: "event_updated", reqId: command.reqId, event: updated, revision: store.revision };
           break;
         }
+        case "complete_event": {
+          const updated = store.completeEvent(command.id, command.completed, command.occurrenceDate);
+          event = { type: "event_updated", reqId: command.reqId, event: updated, revision: store.revision };
+          break;
+        }
         case "delete_event":
           store.deleteEvent(command.id);
           event = { type: "event_deleted", reqId: command.reqId, id: command.id, revision: store.revision };

@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
-import { isDateKey, isTimeKey } from "@whale-cal/shared/dates";
+import { eventIsCompleted, isDateKey, isTimeKey, occurrencesOnDate } from "@whale-cal/shared/dates";
 import type { Calendar, CalendarDatabase, CalendarEvent, EventDraft, EventPatch, RecurrenceRule } from "@whale-cal/shared/types";
 import { databasePath } from "@whale-cal/shared/paths";
 import { log } from "./log";
@@ -155,8 +155,31 @@ export class CalendarStore {
       notes: "notes" in patch ? patch.notes ?? undefined : old.notes,
       recurrence: "recurrence" in patch ? patch.recurrence ?? undefined : old.recurrence,
     });
-    const event: CalendarEvent = { id: old.id, ...normalized, createdAt: old.createdAt, updatedAt: nowIso() };
+    const completion = normalized.recurrence
+      ? { completedDates: old.recurrence ? old.completedDates : old.completed ? [normalized.startDate] : undefined }
+      : { completed: old.recurrence ? eventIsCompleted(old, normalized.startDate) : old.completed };
+    const event: CalendarEvent = { id: old.id, ...normalized, ...completion, createdAt: old.createdAt, updatedAt: nowIso() };
     this.db.events[index] = event;
+    this.commit();
+    return structuredClone(event);
+  }
+
+  completeEvent(id: string, completed: boolean, occurrenceDate?: string): CalendarEvent {
+    const event = this.db.events.find(item => item.id === id);
+    if (!event) throw new Error("Event not found.");
+    if (typeof completed !== "boolean") throw new Error("Completed must be a boolean.");
+    if (event.recurrence && !occurrenceDate) throw new Error("Recurring completion requires the occurrence start date.");
+    if (occurrenceDate !== undefined && (!isDateKey(occurrenceDate) ||
+      !occurrencesOnDate([event], occurrenceDate).some(item => item.startDate === occurrenceDate))) {
+      throw new Error("No occurrence starts on that date.");
+    }
+    if (eventIsCompleted(event, occurrenceDate) === completed) return structuredClone(event);
+    if (event.recurrence) {
+      const dates = new Set(event.completedDates ?? []);
+      if (completed) dates.add(occurrenceDate!); else dates.delete(occurrenceDate!);
+      event.completedDates = [...dates].sort();
+    } else event.completed = completed;
+    event.updatedAt = nowIso();
     this.commit();
     return structuredClone(event);
   }

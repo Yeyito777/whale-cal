@@ -33,6 +33,10 @@ export interface CalendarEvent {
   location?: string;
   notes?: string;
   recurrence?: RecurrenceRule;
+  /** Completion of a non-recurring event. Missing means unfinished. */
+  completed?: boolean;
+  /** Completed recurring occurrences, keyed by their start date. */
+  completedDates?: DateKey[];
   createdAt: string;
   updatedAt: string;
 }

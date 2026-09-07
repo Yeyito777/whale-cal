@@ -52,6 +52,10 @@ test("JSON-lines clients query schema and state, mutate, and receive canonical b
           }) + "\n");
         }
         if (event.type === "event_created") {
+          socket!.write(JSON.stringify({ type: "complete_event", reqId: "done-1", id: event.event.id, completed: true }) + "\n");
+        }
+        if (event.type === "event_updated") {
+          expect(event.event.completed).toBe(true);
           socket!.write(JSON.stringify({
             type: "list_events", reqId: "list-1", from: "2026-08-31", to: "2026-08-31", query: "protocol",
           }) + "\n");
@@ -65,8 +69,9 @@ test("JSON-lines clients query schema and state, mutate, and receive canonical b
     socket!.once("error", reject);
   });
   await Promise.race([complete, Bun.sleep(2_000).then(() => { throw new Error("protocol timeout"); })]);
-  expect(events.map(event => event.type)).toEqual(["schema", "bootstrap", "event_created", "events_list"]);
+  expect(events.map(event => event.type)).toEqual(["schema", "bootstrap", "event_created", "event_updated", "events_list"]);
   const listed = events.find(event => event.type === "events_list");
   expect(listed?.type === "events_list" && listed.occurrences[0]?.event.title).toBe("Protocol test");
   expect(store.snapshot().events[0]?.title).toBe("Protocol test");
+  expect(store.snapshot().events[0]?.completed).toBe(true);
 });

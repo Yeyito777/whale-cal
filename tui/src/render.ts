@@ -1,5 +1,5 @@
 import {
-  addDays, endOfWeek, formatEventTime, formatLongDate, formatMonthYear, formatShortDate,
+  addDays, endOfWeek, eventIsCompleted, formatEventTime, formatLongDate, formatMonthYear, formatShortDate,
   monthMatrix, occurrencesForRange, startOfWeek, todayKey, weekdayLabels,
 } from "@whale-cal/shared/dates";
 import type { Calendar, DateKey, EventOccurrence } from "@whale-cal/shared/types";
@@ -43,6 +43,7 @@ function eventLabel(state: AppState, occurrence: EventOccurrence, max: number): 
   const time = event.startTime ? `${event.startTime} ` : "";
   const repeat = event.recurrence ? "↻ " : "";
   const plain = truncate(`${time}${repeat}${event.title}`, Math.max(0, max - 2));
+  if (eventIsCompleted(event, occurrence.startDate)) return `${theme.muted}✓ ${theme.strike}${plain}${theme.strikeOff}${theme.reset}`;
   return `${eventColor(calendar?.color ?? "#1d9bf0")}• ${plain}${theme.reset}`;
 }
 
@@ -67,7 +68,11 @@ function renderToolbar(state: AppState): string {
   for (const view of ["month", "week", "agenda"]) action(view[0]!.toUpperCase() + view.slice(1), view, !state.dayOpen && state.view === view);
   if (state.dayOpen && state.cols >= 80) action("Day", "day", true);
   action("+ Event", "new");
-  if (state.dayOpen) { action("Edit", "edit"); action("Delete", "delete"); action("Back", "back"); }
+  if (state.dayOpen) {
+    const selected = selectedOccurrence(state);
+    if (selected) action(eventIsCompleted(selected.event, selected.startDate) ? "Reopen" : "Done", "complete");
+    action("Edit", "edit"); action("Delete", "delete"); action("Back", "back");
+  }
   return segment(line, state.cols);
 }
 
@@ -207,7 +212,10 @@ function renderAgenda(state: AppState, widthValue: number, height: number): stri
     const time = formatEventTime(occurrence.event).padEnd(13);
     const calendar = calendarFor(state, occurrence.event.calendarId);
     state.layout.eventRows.push({ index: 0, date: occurrence.startDate, eventId: occurrence.event.id, row: state.layout.bodyTop + row, left: state.layout.mainLeft, right: state.cols });
-    rows[row++] = segment(`${isSelected ? " ▸" : "  "} ${theme.muted}${time} ${eventColor(calendar?.color ?? "#1d9bf0")}● ${theme.text}${occurrence.event.title}`, widthValue, isSelected ? theme.sidebarSelBg : theme.appBg);
+    const done = eventIsCompleted(occurrence.event, occurrence.startDate);
+    const label = truncate(occurrence.event.title, Math.max(0, widthValue - width(`   ${time} ● `)));
+    const title = done ? `${theme.muted}✓ ${theme.strike}${label}${theme.strikeOff}` : `${eventColor(calendar?.color ?? "#1d9bf0")}● ${theme.text}${label}`;
+    rows[row++] = segment(`${isSelected ? " ▸" : "  "} ${theme.muted}${time} ${title}`, widthValue, isSelected ? theme.sidebarSelBg : theme.appBg);
     if (occurrence.event.location && row < height) rows[row++] = segment(`${theme.muted}                  @ ${occurrence.event.location}`, widthValue);
   }
   if (occurrences.length === 0 && height > 2) rows[2] = segment(`${theme.muted} No upcoming events.`, widthValue);
@@ -273,7 +281,9 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
     const active = item.eventIndex === state.selectedEventIndex;
     const calendar = calendarFor(state, occurrence.event.calendarId);
     const title = truncate(occurrence.event.title, listWidth - 21);
-    const content = `${active ? theme.accent : theme.muted} ${active ? "▸" : " "} ${theme.muted}${pad(item.time, 13)} ${eventColor(calendar?.color ?? "#1d9bf0")}● ${theme.text}${title}`;
+    const done = eventIsCompleted(occurrence.event, occurrence.startDate);
+    const styledTitle = done ? `${theme.muted}✓ ${theme.strike}${title}${theme.strikeOff}` : `${eventColor(calendar?.color ?? "#1d9bf0")}● ${theme.text}${title}`;
+    const content = `${active ? theme.accent : theme.muted} ${active ? "▸" : " "} ${theme.muted}${pad(item.time, 13)} ${styledTitle}`;
     putList(row, content, active);
     state.layout.eventRows.push({ index: item.eventIndex, left, right: left + listWidth - 1, row: top + row + 1 });
   }
@@ -285,8 +295,10 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
   if (selected) {
     const event = selected.event;
     const calendar = calendarFor(state, event.calendarId);
-    add(event.title, theme.bold + theme.text);
-    details.push(theme.boldOff);
+    const done = eventIsCompleted(event, selected.startDate);
+    add(event.title, theme.bold + (done ? theme.muted + theme.strike : theme.text));
+    details.push(theme.strikeOff + theme.boldOff);
+    if (done) add("✓ Completed", theme.muted);
     add(`${formatEventTime(event)}  ·  ${selected.startDate === selected.endDate ? selected.startDate : selected.startDate + " — " + selected.endDate}`);
     if (event.startTime && !event.endTime) add("End time not set; no duration reserved in the free-time calculation.", theme.muted);
     add(`● ${calendar?.name ?? "Unknown calendar"}`, eventColor(calendar?.color ?? "#1d9bf0"));
@@ -345,7 +357,7 @@ function renderHelpOverlay(state: AppState, rows: string[]): void {
   const content = [
     ["h j k l", "move by day / week"], ["[  ]", "previous / next month"], ["t or gg", "today"],
     ["Enter", "open selected day"], ["n / a", "new event"], ["e", "edit selected event"],
-    ["d", "delete selected event"], ["J / K", "next / previous event"], ["v", "cycle view"],
+    ["d", "delete selected event"], ["x", "done / unfinished"], ["J / K", "next / previous event"], ["v", "cycle view"],
     ["/", "open command prompt"],
     ["Ctrl+J/K", "sidebar / main panel"], ["Ctrl+N", "calendar / prompt"],
     ["Ctrl+P", "new event"], ["Ctrl+S", "toggle sidebar"], ["Ctrl+Shift+R", "restart cald"],
@@ -440,7 +452,8 @@ export function buildFrame(state: AppState): { rows: string[]; cursor: string } 
   state.layout = { sidebarWidth, calendarRows: [], monthCells: [], mainLeft: sidebarWidth + 1, bodyTop, bodyBottom: footerTop - 1, actions: [], eventRows: [], editorFields: [] };
   rows[1] = renderToolbar(state);
   const sidebar = sidebarWidth ? renderSidebar(state, bodyHeight, sidebarWidth) : [];
-  const main = state.view === "month" ? renderMonth(state, mainWidth, bodyHeight, sidebarWidth + 1)
+  const main = state.dayOpen ? Array.from({ length: bodyHeight }, () => segment("", mainWidth))
+    : state.view === "month" ? renderMonth(state, mainWidth, bodyHeight, sidebarWidth + 1)
     : state.view === "week" ? renderWeek(state, mainWidth, bodyHeight, sidebarWidth + 1)
       : renderAgenda(state, mainWidth, bodyHeight);
   for (let index = 0; index < bodyHeight; index++) rows[bodyTop - 1 + index] = (sidebar[index] ?? "") + (main[index] ?? segment("", mainWidth));

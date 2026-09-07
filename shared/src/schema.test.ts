@@ -17,7 +17,7 @@ test("IPC schema publishes every version-one command as a distinct variant", () 
   expect(schema.$id).toContain("cal-ipc-v1");
   expect(commands).toEqual([
     "probe", "get_schema", "restart_daemon", "bootstrap", "list_calendars", "list_events", "get_event",
-    "create_event", "update_event", "delete_event", "create_calendar", "update_calendar", "delete_calendar",
+    "create_event", "update_event", "delete_event", "complete_event", "create_calendar", "update_calendar", "delete_calendar",
   ]);
   expect(new Set(commands).size).toBe((commands ?? []).length);
 });

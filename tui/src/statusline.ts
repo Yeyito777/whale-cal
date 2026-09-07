@@ -1,4 +1,4 @@
-import { addDays, addMonths, addYears } from "@whale-cal/shared/dates";
+import { addDays, addMonths, addYears, eventIsCompleted } from "@whale-cal/shared/dates";
 import type { CalendarEvent } from "@whale-cal/shared/types";
 import { visibleEvents, type AppState } from "./state";
 import { theme } from "./theme";
@@ -32,6 +32,8 @@ export function nextEvent(events: readonly CalendarEvent[], now: number): NextEv
       if (startsAt(event, occurrenceDate(event, middle)) < now) low = middle + 1;
       else high = middle;
     }
+    const completedDates = new Set(event.completedDates ?? []);
+    while (low < count && (event.recurrence ? completedDates.has(occurrenceDate(event, low)) : eventIsCompleted(event))) low++;
     if (low >= count) continue;
     const date = occurrenceDate(event, low);
     if (event.recurrence?.until && date > event.recurrence.until) continue;

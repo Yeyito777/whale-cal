@@ -18,6 +18,7 @@ export type Command =
   | { type: "get_event"; reqId: string; id: string }
   | { type: "create_event"; reqId: string; event: EventDraft }
   | { type: "update_event"; reqId: string; id: string; patch: EventPatch }
+  | { type: "complete_event"; reqId: string; id: string; completed: boolean; occurrenceDate?: string }
   | { type: "delete_event"; reqId: string; id: string }
   | { type: "create_calendar"; reqId: string; name: string; color?: string }
   | { type: "update_calendar"; reqId: string; id: string; patch: Partial<Pick<Calendar, "name" | "color" | "visible">> }

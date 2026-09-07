@@ -1,4 +1,4 @@
-import { addDays, addMonths, occurrencesForRange, todayKey } from "@whale-cal/shared/dates";
+import { addDays, addMonths, eventIsCompleted, occurrencesForRange, todayKey } from "@whale-cal/shared/dates";
 import type { CalendarEvent, CalendarView, EventDraft, EventPatch } from "@whale-cal/shared/types";
 import { DaemonClient, type ClientEvent } from "./client";
 import { runCommand, type CommandAction } from "./commands";
@@ -170,6 +170,13 @@ function editSelected(): void {
   state.editor = createEditor(state, occurrence.event);
 }
 
+function completeSelected(completed?: boolean): void {
+  const occurrence = selectedOccurrence(state);
+  if (!occurrence) { notice("No event is selected.", "warning"); return; }
+  const done = completed ?? !eventIsCompleted(occurrence.event, occurrence.startDate);
+  track(client.completeEvent(occurrence.event.id, done, occurrence.startDate), `${done ? "Completed" : "Reopened"} “${occurrence.event.title}”.`);
+}
+
 function confirmDelete(): void {
   const occurrence = selectedOccurrence(state);
   if (!occurrence) { notice("No event is selected.", "warning"); return; }
@@ -228,6 +235,7 @@ function execute(action: CommandAction): void {
     case "new": action.draft ? createEvent(action.draft) : openNewEditor(); return;
     case "edit": editSelected(); return;
     case "delete": confirmDelete(); return;
+    case "complete": completeSelected(action.completed); return;
     case "reload": client.bootstrap(); notice("Reloading canonical calendar…"); return;
     case "ssh_status": client.routeStatus(); return;
     case "ssh_connect": void client.switchSsh(action.alias); return;
@@ -369,6 +377,7 @@ function handleDayKey(key: KeyEvent): void {
     case "t": selectDate(state, todayKey()); return;
     case "n": case "a": openNewEditor(); return;
     case "e": if (selectedOccurrence(state)) editSelected(); return;
+    case "x": completeSelected(); return;
     case "d": confirmDelete(); return;
     case "/": case ":": focusPrompt(state, "/"); return;
     case "i": focusPrompt(state); return;
@@ -423,6 +432,7 @@ function handleNormalKey(key: KeyEvent): void {
     case "K": moveSelectedEvent(-1); return;
     case "n": case "a": openNewEditor(); return;
     case "e": editSelected(); return;
+    case "x": completeSelected(); return;
     case "enter": state.dayOpen = true; return;
     case "d": confirmDelete(); return;
     case "v": cycleView(); return;
@@ -554,6 +564,7 @@ function handleMouse(event: MouseEvent): void {
         case "new": openNewEditor(); break;
         case "edit": if (selectedOccurrence(state)) editSelected(); break;
         case "delete": confirmDelete(); break;
+        case "complete": completeSelected(); break;
         case "back": state.dayOpen = false; break;
         case "day": state.dayOpen = true; break;
         case "today": selectDate(state, todayKey()); break;

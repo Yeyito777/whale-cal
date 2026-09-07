@@ -13,6 +13,7 @@ export type CommandAction =
   | { type: "new"; draft?: EventDraft }
   | { type: "edit" }
   | { type: "delete" }
+  | { type: "complete"; completed: boolean }
   | { type: "ssh_status" }
   | { type: "ssh_connect"; alias: string }
   | { type: "ssh_cancel" }
@@ -26,6 +27,7 @@ export const COMMANDS = [
   ["/help", "show keys and commands"], ["/today", "jump to today"], ["/goto", "select YYYY-MM-DD"],
   ["/view", "month, week, or agenda"], ["/new", "quick-create an event"], ["/edit", "edit selected event"],
   ["/delete", "delete selected event"], ["/search", "find an event"], ["/calendar", "new/toggle calendars"],
+  ["/done", "mark selected event done"], ["/undone", "mark selected event unfinished"],
   ["/ssh", "route through a remote cald"], ["/reload", "reload canonical state"], ["/quit", "leave the TUI"],
 ] as const;
 
@@ -50,6 +52,8 @@ export function runCommand(text: string, state: AppState): CommandAction {
       catch (error) { return { type: "error", message: error instanceof Error ? error.message : String(error) }; }
     case "/edit": return { type: "edit" };
     case "/delete": return { type: "delete" };
+    case "/done": return { type: "complete", completed: true };
+    case "/undone": return { type: "complete", completed: false };
     case "/reload": return { type: "reload" };
     case "/search":
       if (!rest) return { type: "error", message: "Usage: /search words" };

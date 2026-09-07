@@ -61,6 +61,7 @@ current GUI launchd domain when available and starts automatically at login.
 | `Enter` | open the selected day and its event details |
 | `n` or `a` | new event form |
 | `e` | edit selected event, or create on an empty day |
+| `x` | mark the selected event done / unfinished |
 | `d` | delete selected event (with confirmation) |
 | `J` / `K` | next / previous event on the selected day |
 | `v` | cycle month, week, and agenda views |
@@ -201,6 +202,30 @@ bun run daemon -- proxy        # stdio ↔ socket bridge (used by SSH)
 ```
 
 ## CLI, schema, and AI IPC
+
+### Completed events
+
+Press `x` on a selected event, click **Done / Reopen** in the day toolbar, or
+use `/done` and `/undone`. Completed items stay visible with muted, crossed-out
+titles and a checkmark. They are omitted from the **Next Event** countdown;
+their scheduled time is unchanged, including in the day view's gap calculation.
+Completion is saved by the daemon and synced to all connected clients.
+
+For recurring events, only the selected occurrence is marked done, never the
+whole series. The CLI uses the base event ID and requires its occurrence start
+date (also for multi-day occurrences):
+
+```sh
+cal event complete EVENT_ID --json
+cal event reopen EVENT_ID --json
+cal event complete RECURRING_EVENT_ID --date 2026-09-14 --json
+cal event reopen RECURRING_EVENT_ID --date 2026-09-14 --json
+```
+
+The IPC command is `complete_event`, with `id`, boolean `completed`, and
+`occurrenceDate` for recurring events. Old calendars need no migration: events
+without completion metadata remain unfinished. No events are deleted by marking
+them done, and reopening preserves all event details.
 
 The `cal` workspace is a thin daemon client suitable for scripts and AI tool
 calls. It does not read or modify the JSON database directly:
