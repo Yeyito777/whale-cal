@@ -102,6 +102,9 @@ closes the popup, and enters normal mode. Type a space after a completed command
 to see argument suggestions for views, calendar operations/names, SSH aliases,
 dates, quick-add weekdays, and existing event titles for search. Suggestions are
 also clickable. Only Cal commands are offered, not Exocortex's chat/model commands.
+The popup matches Exocortex's compact, borderless list: up to ten rows directly
+above the prompt separator, content-sized columns, white names, dim descriptions,
+an accent selection marker, and small scroll arrows instead of a title or counter.
 
 The single-line prompt supports insert/normal modes, character and word motions,
 counts, `d`/`c`/`y` operators, word and simple delimiter text objects, `f`/`t`

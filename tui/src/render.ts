@@ -5,6 +5,7 @@ import {
 import type { Calendar, DateKey, EventOccurrence } from "@whale-cal/shared/types";
 import { COMMANDS } from "./commands";
 import { refreshCompletion } from "./completion";
+import { completionMenu } from "./completion-menu";
 import { renderStatusline, STATUSLINE_HEIGHT } from "./statusline";
 import { cursorAt, flushFrame, overlayAt } from "./frame";
 import {
@@ -394,20 +395,12 @@ function renderCompletion(state: AppState, rows: string[]): void {
   refreshCompletion(state.prompt, state);
   const menu = state.prompt.completion;
   if (!menu) return;
-  const capacity = Math.min(6, menu.items.length, state.rows - STATUSLINE_HEIGHT - 9);
-  const start = Math.max(0, Math.min(menu.selection - capacity + 1, menu.items.length - capacity));
-  const boxWidth = Math.min(78, state.cols - 8), left = 5;
-  const top = state.rows - STATUSLINE_HEIGHT - 5 - capacity;
-  putOverlayRow(rows, top, left, boxWidth, titledOverlayBorder("Suggestions", boxWidth));
-  for (let i = 0; i < capacity; i++) {
-    const index = start + i, item = menu.items[index]!;
-    const nameWidth = Math.min(25, Math.floor(boxWidth * 0.4));
-    const content = `${theme.command} ${pad(truncate(item.label, nameWidth), nameWidth)} ${theme.muted}${truncate(item.description, boxWidth - nameWidth - 5)}`;
-    putOverlayRow(rows, top + 1 + i, left, boxWidth, framedOverlayRow(content, boxWidth, menu.selection === index ? theme.sidebarSelBg : theme.appBg));
-    state.layout.actions.push({ action: `complete:${index}`, left, right: left + boxWidth - 1, row: top + 2 + i });
+  const popup = completionMenu(menu, state.cols, state.rows - STATUSLINE_HEIGHT - 2);
+  for (const [i, content] of popup.rows.entries()) {
+    const row = popup.top + i;
+    putOverlayRow(rows, row - 1, 1, popup.width, content);
+    state.layout.actions.push({ action: `complete:${popup.start + i}`, left: 1, right: popup.width, row });
   }
-  const label = menu.items.length > capacity ? ` ${start + 1}–${start + capacity} / ${menu.items.length} ` : "";
-  putOverlayRow(rows, top + capacity + 1, left, boxWidth, `${theme.borderFocused}└${"─".repeat(boxWidth - 2 - width(label))}${theme.muted}${label}${theme.borderFocused}┘`);
 }
 
 export function buildFrame(state: AppState): { rows: string[]; cursor: string } {
