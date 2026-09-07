@@ -2,6 +2,8 @@ import { describe, expect, test } from "bun:test";
 import { buildFrame } from "./render";
 import { createEditor, createState } from "./state";
 import { stripAnsi, width } from "./text";
+import { addDays, startOfWeek, todayKey } from "@whale-cal/shared/dates";
+import { theme } from "./theme";
 
 function fixture(cols = 120, rows = 36) {
   const state = createState();
@@ -33,6 +35,57 @@ function painted(line: string): string {
 }
 
 describe("calendar layouts", () => {
+  for (const view of ["month", "week"] as const) {
+    for (const cols of [54, 80, 120, 160]) {
+      test(`${view} gives today a solid badge at ${cols} columns, independent of selection`, () => {
+        const state = fixture(cols, 30);
+        state.view = view;
+        state.selectedDate = todayKey();
+        state.sidebarOpen = cols === 80;
+        const check = () => {
+          const frame = buildFrame(state);
+          const cell = state.layout.monthCells.find(cell => cell.date === todayKey())!;
+          expect(cell).toBeDefined();
+          const header = frame.rows[cell.top - 1]!;
+          expect(header).toContain(theme.topbarBg + theme.text + theme.bold);
+          expect(stripAnsi(header)).toContain(String(Number(todayKey().slice(8))));
+          expect(frame.rows.every(row => width(row) <= cols)).toBe(true);
+          if (cols >= 120) expect(stripAnsi(header)).toContain("Today");
+        };
+        check();
+        const first = startOfWeek(todayKey(), 1);
+        state.selectedDate = first === todayKey() ? addDays(first, 1) : first;
+        check();
+      });
+    }
+  }
+
+  test("today badge retains event counts in a compact month and is absent in other months", () => {
+    const state = fixture(54, 18);
+    state.selectedDate = todayKey();
+    state.database.events = state.database.events.slice(0, 3).map(e => ({ ...e, startDate: todayKey(), endDate: todayKey() }));
+    let frame = buildFrame(state);
+    const cell = state.layout.monthCells.find(cell => cell.date === todayKey())!;
+    if (cell.top === cell.bottom) expect(stripAnsi(frame.rows[cell.top - 1]!)).toContain("· 3");
+    state.selectedDate = addDays(todayKey(), 70);
+    frame = buildFrame(state);
+    expect(frame.rows.slice(2, state.layout.bodyBottom).join("")).not.toContain(theme.topbarBg);
+  });
+
+  test("day details and agenda label today explicitly", () => {
+    const state = fixture();
+    state.selectedDate = todayKey();
+    state.database.events = state.database.events.slice(0, 1).map(e => ({ ...e, startDate: todayKey(), endDate: todayKey() }));
+    state.dayOpen = true;
+    let frame = buildFrame(state);
+    expect(frame.rows[state.layout.bodyTop - 1]).toContain(theme.topbarBg + theme.text + theme.bold);
+    expect(painted(frame.rows[state.layout.bodyTop - 1]!)).toContain("Today");
+    state.dayOpen = false; state.view = "agenda";
+    frame = buildFrame(state);
+    expect(frame.rows[state.layout.bodyTop]).toContain(theme.topbarBg + theme.text + theme.bold);
+    expect(stripAnsi(frame.rows[state.layout.bodyTop]!)).toContain("Today");
+  });
+
   test("month uses complete grid, five weeks for September, and preserves overflow counts", () => {
     const state = fixture();
     const frame = buildFrame(state);

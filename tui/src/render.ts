@@ -100,6 +100,11 @@ function selectedCellContent(content: string, target: number, selected: boolean)
   return segment(content, target, selected ? theme.sidebarSelBg : theme.appBg);
 }
 
+/** Today is a solid accent badge, independent of the selected-day background. */
+function todayHeader(label: string, target: number): string {
+  return segment(`${theme.text}${theme.bold}${center(label, target)}${theme.boldOff}`, target, theme.topbarBg);
+}
+
 function renderMonth(state: AppState, widthValue: number, height: number, absoluteLeft: number): string[] {
   const rows = Array.from({ length: height }, () => segment("", widthValue));
   if (height < 2) return rows;
@@ -129,10 +134,15 @@ function renderMonth(state: AppState, widthValue: number, height: number, absolu
         const events = perDay[day]!;
         let content = "";
         if (line === 0) {
-          const color = date === today ? theme.accent + theme.bold : date === state.selectedDate ? theme.text + theme.bold
+          const color = date === state.selectedDate ? theme.text + theme.bold
             : date.slice(0, 7) === state.selectedDate.slice(0, 7) ? theme.text : theme.muted;
           const count = weekHeight === 1 && events.length ? ` · ${events.length}` : "";
-          content = `${color} ${Number(date.slice(8))}${date === today && size >= 14 ? " Today" : ""}${count}${theme.boldOff}`;
+          const number = Number(date.slice(8));
+          if (date === today) {
+            const label = `${number} Today${count}`;
+            return todayHeader(width(label) <= size ? label : `${number}${count}`, size);
+          }
+          content = `${color} ${number}${count}${theme.boldOff}`;
         } else if (line === weekHeight - 1 && events.length > weekHeight - 1) {
           content = `${theme.muted} +${events.length - line + 1} more`;
         } else if (events[line - 1]) content = ` ${eventLabel(state, events[line - 1]!, size - 1)}`;
@@ -153,8 +163,8 @@ function renderWeek(state: AppState, widthValue: number, height: number, absolut
   const dates = Array.from({ length: 7 }, (_, i) => addDays(first, i));
   rows[1] = dates.map((key, i) => {
     const title = `${weekdayLabels(1)[i]} ${Number(key.slice(8))}`;
-    const styled = key === today ? `${theme.accent}${theme.bold}${title}` : title;
-    return selectedCellContent(center(styled, widths[i]!), widths[i]!, key === state.selectedDate);
+    if (key === today) return todayHeader(width(title + " Today") <= widths[i]! ? title + " Today" : title, widths[i]!);
+    return selectedCellContent(`${theme.text}${center(title, widths[i]!)}`, widths[i]!, key === state.selectedDate);
   }).join(`${theme.appBg}${theme.borderUnfocused}│${theme.reset}`);
   state.layout.monthCells = [];
   let left = absoluteLeft;
@@ -187,7 +197,8 @@ function renderAgenda(state: AppState, widthValue: number, height: number): stri
     if (row >= height) break;
     if (occurrence.startDate !== currentDate) {
       currentDate = occurrence.startDate;
-      rows[row++] = segment(`${currentDate === state.selectedDate ? theme.accent : theme.text}${theme.bold} ${formatLongDate(currentDate)}${theme.boldOff}`, widthValue);
+      const badge = currentDate === todayKey() ? todayHeader("Today", 7) + " " : " ";
+      rows[row++] = segment(`${badge}${currentDate === state.selectedDate ? theme.accent : theme.text}${theme.bold}${formatLongDate(currentDate)}${theme.boldOff}`, widthValue);
       if (row >= height) break;
     }
     const isSelected = occurrence.startDate <= state.selectedDate && occurrence.endDate >= state.selectedDate
@@ -239,7 +250,8 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
   const putList = (row: number, content: string, active = false) => {
     if (row < listHeight) putOverlayRow(rows, top + row, left, listWidth, segment(content, listWidth, active ? theme.sidebarSelBg : theme.appBg));
   };
-  putList(0, `${theme.text}${theme.bold} ${formatLongDate(state.selectedDate)}${theme.boldOff}`);
+  const todayBadge = state.selectedDate === todayKey() ? todayHeader("Today", 7) + " " : " ";
+  putList(0, `${todayBadge}${theme.text}${theme.bold}${formatLongDate(state.selectedDate)}${theme.boldOff}`);
   const capacity = Math.max(1, listHeight - 3);
   const start = Math.max(0, Math.min(state.selectedEventIndex - Math.floor(capacity / 2), occurrences.length - capacity));
   const range = occurrences.length > capacity ? ` · ${start + 1}–${Math.min(occurrences.length, start + capacity)} of ${occurrences.length}` : "";

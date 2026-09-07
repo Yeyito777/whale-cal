@@ -78,6 +78,8 @@ the calendar filters, and that preference is remembered. The toolbar provides
 clickable date navigation, view switching, and event creation without shortcut
 labels. The month grid uses only the weeks belonging to that month, with visible
 week boundaries and overflow counts for busy days.
+Today has a solid Whale-blue date header with bold white text (and a `Today`
+label where space allows), separate from the selected day's dark highlight.
 
 Pressing `Enter` on the calendar opens a detailed day panel. Within that panel,
 `j`/`k` selects an event, `h`/`l` moves between days, and `Enter` or `e` edits
