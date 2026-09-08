@@ -22,7 +22,7 @@ function startsAt(event: CalendarEvent, date: string): number {
 }
 
 export interface NextEvent { event: CalendarEvent; date: string; timestamp: number }
-export function nextEvent(events: readonly CalendarEvent[], now: number): NextEvent | null {
+function nextItem(events: readonly CalendarEvent[], now: number): NextEvent | null {
   let next: NextEvent | null = null;
   for (const event of events) {
     let low = 0, high = event.recurrence ? Math.min(event.recurrence.count ?? 100000, 100000) : 1;
@@ -45,6 +45,14 @@ export function nextEvent(events: readonly CalendarEvent[], now: number): NextEv
   return next;
 }
 
+export function nextEvent(events: readonly CalendarEvent[], now: number): NextEvent | null {
+  return nextItem(events.filter(event => event.kind !== "deadline"), now);
+}
+
+export function nextDeadline(events: readonly CalendarEvent[], now: number): NextEvent | null {
+  return nextItem(events.filter(event => event.kind === "deadline"), now);
+}
+
 export function countdown(milliseconds: number): string {
   if (milliseconds <= 0) return "now";
   const minutes = Math.ceil(milliseconds / 60000);
@@ -54,13 +62,19 @@ export function countdown(milliseconds: number): string {
 export const STATUSLINE_HEIGHT = 2;
 
 export function renderStatusline(state: AppState, now = Date.now()): [string, string] {
-  const next = nextEvent(visibleEvents(state), now);
-  const title = !state.connected ? "offline" : !next ? "none scheduled"
-    : next.event.title + (next.event.kind === "deadline" ? " · Deadline" : next.event.startTime ? "" : " · All day");
-  const remaining = state.connected && next ? countdown(next.timestamp - now) : "—";
-  const row = (label: string, value: string) => {
-    const content = `${theme.muted}${label}${theme.accent}${truncate(value, Math.max(0, state.cols - width(label)))}`;
-    return `${theme.appBg}${pad(content, state.cols)}${theme.reset}`;
+  const events = visibleEvents(state);
+  const next = nextEvent(events, now), due = nextDeadline(events, now);
+  const title = (item: NextEvent | null) => !state.connected ? "offline" : !item ? "none"
+    : item.event.title + (!item.event.startTime && item.event.kind !== "deadline" ? " · All day" : "");
+  const remaining = (item: NextEvent | null) => state.connected && item ? countdown(item.timestamp - now) : "—";
+  const separator = state.cols >= 3 ? ` ${theme.borderUnfocused}│ ` : "";
+  const leftWidth = Math.floor((state.cols - width(separator)) / 2);
+  const rightWidth = state.cols - width(separator) - leftWidth;
+  const block = (label: string, value: string, size: number) => {
+    const content = `${theme.muted}${truncate(label, size)}${theme.accent}${truncate(value, Math.max(0, size - width(label)))}`;
+    return pad(content, size);
   };
-  return [row(next?.event.kind === "deadline" ? "  Next Due: " : "  Next Event: ", title), row(next?.event.kind === "deadline" ? "  Due in: " : "  Happens in: ", remaining)];
+  const row = (leftLabel: string, leftValue: string, rightLabel: string, rightValue: string) =>
+    `${theme.appBg}${block(leftLabel, leftValue, leftWidth)}${separator}${block(rightLabel, rightValue, rightWidth)}${theme.reset}`;
+  return [row("  Next Event: ", title(next), " Next Deadline: ", title(due)), row("  Happens in: ", remaining(next), " Due in: ", remaining(due))];
 }

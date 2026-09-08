@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { createEditor, createState, editorDraft, editorItemKind, setEditorItemKind } from "./state";
 import { buildFrame } from "./render";
-import { nextEvent, renderStatusline } from "./statusline";
+import { nextDeadline, renderStatusline } from "./statusline";
 import { runCommand } from "./commands";
 import { commandCompletions } from "./completion";
 import { theme } from "./theme";
@@ -82,10 +82,10 @@ test("next-event status respects due times, date-only day boundaries, recurrence
   const due = s.database.events[0]!;
   delete due.startTime;
   const noon = new Date("2026-09-09T12:00:00").getTime();
-  expect(nextEvent([due], noon)?.date).toBe("2026-09-09");
+  expect(nextDeadline([due], noon)?.date).toBe("2026-09-09");
   const status = renderStatusline(s, noon).join("\n");
-  expect(status).toContain("Next Due:"); expect(status).toContain("12h00m");
+  expect(status).toContain("Next Deadline:"); expect(status).toContain("12h00m");
   due.recurrence = { frequency: "weekly", interval: 1, count: 3 };
   due.completedDates = ["2026-09-09"];
-  expect(nextEvent([due], noon)?.date).toBe("2026-09-16");
+  expect(nextDeadline([due], noon)?.date).toBe("2026-09-16");
 });

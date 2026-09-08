@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import type { CalendarEvent } from "@whale-cal/shared/types";
-import { countdown, nextEvent, renderStatusline } from "./statusline";
+import { countdown, nextDeadline, nextEvent, renderStatusline } from "./statusline";
 import { createState } from "./state";
 import { stripAnsi, width } from "./text";
 
@@ -41,12 +41,57 @@ test("status blocks fit narrow terminals and honor hidden calendars", () => {
   expect(stripAnsi(lines[0])).toStartWith("  Next Event: ");
   expect(stripAnsi(lines[0])).not.toContain("Happens in:");
   expect(stripAnsi(lines[1])).toContain("  Happens in: 1h30m");
-  expect(lines.join("")).not.toContain("│");
+  expect(lines.every(line => stripAnsi(line).includes("│"))).toBe(true);
+  expect(stripAnsi(lines[0])).toContain("Next Deadline: none");
   state.database.calendars[0]!.visible = false;
-  expect(stripAnsi(renderStatusline(state, now)[0])).toContain("none scheduled");
+  expect(stripAnsi(renderStatusline(state, now)[0])).toContain("Next Event: none");
   expect(stripAnsi(renderStatusline(state, now)[1])).toContain("Happens in: —");
   state.connected = false;
   expect(stripAnsi(renderStatusline(state, now)[0])).toContain("offline");
+});
+
+test("event and deadline blocks independently select upcoming incomplete occurrences", () => {
+  const due = event({ id: "due", kind: "deadline", title: "Submit quiz", startTime: "13:00" });
+  const meeting = event();
+  expect(nextEvent([due, meeting], now)?.event.id).toBe(meeting.id);
+  expect(nextDeadline([meeting, due], now)?.event.id).toBe(due.id);
+  expect(nextEvent([due], now)).toBeNull();
+  expect(nextDeadline([meeting], now)).toBeNull();
+  expect(nextDeadline([{ ...due, completed: true }], now)).toBeNull();
+  expect(nextDeadline([{ ...due, startTime: "09:00" }], now)).toBeNull();
+  const recurring = { ...due, recurrence: { frequency: "weekly" as const, interval: 1, count: 2 }, completedDates: ["2026-09-06"] };
+  expect(nextDeadline([recurring], now)?.date).toBe("2026-09-13");
+  expect(nextDeadline([{ ...recurring, completedDates: ["2026-09-06", "2026-09-13"] }], now)).toBeNull();
+
+  const state = createState(); state.cols = 120; state.connected = true;
+  state.database.events = [meeting, due];
+  state.database.calendars = [{ id: "cal", name: "Work", visible: true, color: "#fff", createdAt: "", updatedAt: "" }];
+  let lines = renderStatusline(state, now).map(stripAnsi);
+  expect(lines[0]).toContain("Next Event: Design review");
+  expect(lines[0]).toContain("Next Deadline: Submit quiz");
+  expect(lines[1]).toContain("Happens in: 1h30m");
+  expect(lines[1]).toContain("Due in: 0h30m");
+  expect(lines[0]!.indexOf("│")).toBe(lines[1]!.indexOf("│"));
+  state.database.calendars[0]!.visible = false;
+  lines = renderStatusline(state, now).map(stripAnsi);
+  expect(lines[0]).toContain("Next Deadline: none");
+  expect(lines[1]).toContain("Due in: —");
+  state.connected = false;
+  expect(stripAnsi(renderStatusline(state, now)[0])).toContain("Next Deadline: offline");
+});
+
+test("side-by-side blocks retain two rows and exact width with long Unicode titles", () => {
+  const state = createState(); state.connected = true;
+  state.database.calendars = [{ id: "cal", name: "Work", visible: true, color: "#fff", createdAt: "", updatedAt: "" }];
+  state.database.events = [event({ title: "東京 👩‍💻 ".repeat(30) }), event({ kind: "deadline", title: "締切 👩‍💻 ".repeat(30) })];
+  for (const cols of [54, 55, 80, 120, 160]) {
+    state.cols = cols;
+    const lines = renderStatusline(state, now);
+    expect(lines).toHaveLength(2);
+    expect(lines.every(line => width(line) === cols)).toBe(true);
+    expect(stripAnsi(lines[0])).toContain("Next Deadline:");
+    expect(stripAnsi(lines[1])).toContain("Due in: 1h30m");
+  }
 });
 
 test("countdown follows local wall-time timestamps over DST changes", () => {

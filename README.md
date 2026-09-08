@@ -156,12 +156,14 @@ The frame, mode indicator, and draft are muted when the prompt is unfocused
 (including behind a dialog). A focused prompt uses Whale's blue accent frame,
 white text, and pale-blue highlighting for recognized commands and subcommands;
 event titles and other free-form arguments remain white.
-Below the bottom separator, an Exocortex-style two-line status block shows `Next Event:`
-on its first row and the live `Happens in: 1h30m` countdown underneath, with muted
-labels and accent-colored values. It uses the current local time and visible calendars,
-not the selected date, and respects recurrence limits. All-day events start at
-local midnight; already-started events are skipped. Titles shorten on narrow
-terminals so the countdown stays visible. Connection status remains in the top bar.
+Below the bottom separator, two side-by-side, two-line status blocks show
+`Next Event:` / `Happens in: 1h30m` on the left and `Next Deadline:` / `Due in:`
+on the right, with muted labels and accent-colored values. Each independently
+finds the next incomplete item of its type using current local time and visible
+calendars, not the selected date, and respects recurrence limits. All-day events
+start at local midnight; date-only deadlines are due at the end of their day.
+Already-started events and past due points are skipped. Titles shorten on narrow
+terminals so the countdowns stay visible. Connection status remains in the top bar.
 
 Quick creation is available from the command prompt:
 
