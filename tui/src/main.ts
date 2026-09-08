@@ -394,7 +394,7 @@ function handleDayKey(key: KeyEvent): void {
     case "t": selectDate(state, todayKey()); return;
     case "n": case "a": openNewEditor(); return;
     case "e": if (selectedOccurrence(state)) editSelected(); return;
-    case "x": completeSelected(); return;
+    case ";": completeSelected(); return;
     case "d": confirmDelete(); return;
     case "/": case ":": focusPrompt(state, "/"); return;
     case "i": focusPrompt(state); return;
@@ -449,7 +449,7 @@ function handleNormalKey(key: KeyEvent): void {
     case "K": moveSelectedEvent(-1); return;
     case "n": case "a": openNewEditor(); return;
     case "e": editSelected(); return;
-    case "x": completeSelected(); return;
+    case ";": completeSelected(); return;
     case "enter": state.dayOpen = true; return;
     case "d": confirmDelete(); return;
     case "v": cycleView(); return;

@@ -379,7 +379,7 @@ function renderHelpOverlay(state: AppState, rows: string[]): void {
   const content = [
     ["h j k l", "move by day / week"], ["[  ]", "previous / next month"], ["t or gg", "today"],
     ["Enter", "open selected day"], ["n / a", "new event"], ["e", "edit selected event"],
-    ["d", "delete selected event"], ["x", "done / unfinished"], ["J / K", "next / previous event"], ["v", "cycle view"],
+    ["d", "delete selected event"], [";", "done / unfinished"], ["J / K", "next / previous event"], ["v", "cycle view"],
     ["/", "open command prompt"],
     ["Ctrl+J/K", "sidebar / main panel"], ["Ctrl+N", "calendar / prompt"],
     ["Ctrl+P", "new event"], ["Ctrl+S", "toggle sidebar"], ["Ctrl+Shift+R", "restart cald"],

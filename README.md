@@ -61,7 +61,7 @@ current GUI launchd domain when available and starts automatically at login.
 | `Enter` | open the selected day and its event details |
 | `n` or `a` | new event form |
 | `e` | edit selected event, or create on an empty day |
-| `x` | mark the selected event done / unfinished |
+| `;` | mark the selected event done / unfinished |
 | `d` | delete selected event (with confirmation) |
 | `J` / `K` | next / previous event on the selected day |
 | `v` | cycle month, week, and agenda views |
@@ -249,7 +249,7 @@ types. The next-item status block says **Next Due / Due in** for a deadline.
 
 ### Completed events
 
-Press `x` on a selected event, click **Done / Reopen** in the day toolbar, or
+Press `;` on a selected event, click **Done / Reopen** in the day toolbar, or
 use `/done` and `/undone`. Completed items stay visible with muted, crossed-out
 titles and a checkmark. They are omitted from the **Next Event** countdown;
 their scheduled time is unchanged, including in the day view's gap calculation.
