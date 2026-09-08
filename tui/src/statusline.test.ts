@@ -10,9 +10,13 @@ const now = new Date("2026-09-06T12:30:00").getTime();
 test("next event is relative to now, not calendar selection; past starts are skipped", () => {
   const next = nextEvent([event({ startTime: "09:00" }), event(), event({ startTime: "16:00" })], now)!;
   expect(next.event.startTime).toBe("14:00");
-  expect(countdown(next.timestamp - now)).toBe("1h30m");
-  expect(countdown(20000)).toBe("0h01m");
-  expect(countdown(0)).toBe("now");
+  expect(countdown(next.timestamp - now)).toBe("0d1h30m");
+  expect(countdown(20000)).toBe("0d0h1m");
+  expect(countdown(0)).toBe("0d0h0m");
+  expect(countdown(-1000)).toBe("0d0h0m");
+  expect(countdown(86400000)).toBe("1d0h0m");
+  expect(countdown(86399000)).toBe("1d0h0m");
+  expect(countdown((2 * 1440 + 3 * 60 + 4) * 60000)).toBe("2d3h4m");
 });
 
 test("recurring next occurrence respects count and inclusive until", () => {
@@ -38,9 +42,9 @@ test("status blocks fit narrow terminals and honor hidden calendars", () => {
   const lines = renderStatusline(state, now);
   expect(lines).toHaveLength(2);
   expect(lines.every(line => width(line) === 54)).toBe(true);
-  expect(stripAnsi(lines[0])).toStartWith("  Next Event: ");
+  expect(stripAnsi(lines[0])).toStartWith(" Next Event: ");
   expect(stripAnsi(lines[0])).not.toContain("Happens in:");
-  expect(stripAnsi(lines[1])).toContain("  Happens in: 1h30m");
+  expect(stripAnsi(lines[1])).toStartWith(" Happens in: 0d1h30m");
   expect(lines.every(line => stripAnsi(line).includes("│"))).toBe(true);
   expect(stripAnsi(lines[0])).toContain("Next Deadline: none");
   state.database.calendars[0]!.visible = false;
@@ -69,9 +73,13 @@ test("event and deadline blocks independently select upcoming incomplete occurre
   let lines = renderStatusline(state, now).map(stripAnsi);
   expect(lines[0]).toContain("Next Event: Design review");
   expect(lines[0]).toContain("Next Deadline: Submit quiz");
-  expect(lines[1]).toContain("Happens in: 1h30m");
-  expect(lines[1]).toContain("Due in: 0h30m");
+  expect(lines[1]).toContain("Happens in: 0d1h30m");
+  expect(lines[1]).toContain("Due in: 0d0h30m");
   expect(lines[0]!.indexOf("│")).toBe(lines[1]!.indexOf("│"));
+  // Natural widths: one outside margin, one space on either side of the divider.
+  expect(lines[0]!.trimEnd()).toBe(" Next Event: Design review │ Next Deadline: Submit quiz");
+  state.cols = 160;
+  expect(stripAnsi(renderStatusline(state, now)[0]).trimEnd()).toBe(lines[0]!.trimEnd());
   state.database.calendars[0]!.visible = false;
   lines = renderStatusline(state, now).map(stripAnsi);
   expect(lines[0]).toContain("Next Deadline: none");
@@ -90,7 +98,7 @@ test("side-by-side blocks retain two rows and exact width with long Unicode titl
     expect(lines).toHaveLength(2);
     expect(lines.every(line => width(line) === cols)).toBe(true);
     expect(stripAnsi(lines[0])).toContain("Next Deadline:");
-    expect(stripAnsi(lines[1])).toContain("Due in: 1h30m");
+    expect(stripAnsi(lines[1])).toContain("Due in: 0d1h30m");
   }
 });
 

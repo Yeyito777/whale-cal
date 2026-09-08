@@ -54,9 +54,8 @@ export function nextDeadline(events: readonly CalendarEvent[], now: number): Nex
 }
 
 export function countdown(milliseconds: number): string {
-  if (milliseconds <= 0) return "now";
-  const minutes = Math.ceil(milliseconds / 60000);
-  return `${Math.floor(minutes / 60)}h${String(minutes % 60).padStart(2, "0")}m`;
+  const minutes = Math.max(0, Math.ceil(milliseconds / 60000));
+  return `${Math.floor(minutes / 1440)}d${Math.floor(minutes / 60) % 24}h${minutes % 60}m`;
 }
 
 export const STATUSLINE_HEIGHT = 2;
@@ -67,14 +66,21 @@ export function renderStatusline(state: AppState, now = Date.now()): [string, st
   const title = (item: NextEvent | null) => !state.connected ? "offline" : !item ? "none"
     : item.event.title + (!item.event.startTime && item.event.kind !== "deadline" ? " · All day" : "");
   const remaining = (item: NextEvent | null) => state.connected && item ? countdown(item.timestamp - now) : "—";
-  const separator = state.cols >= 3 ? ` ${theme.borderUnfocused}│ ` : "";
-  const leftWidth = Math.floor((state.cols - width(separator)) / 2);
-  const rightWidth = state.cols - width(separator) - leftWidth;
+  const left = [["Next Event: ", title(next)], ["Happens in: ", remaining(next)]] as const;
+  const right = [["Next Deadline: ", title(due)], ["Due in: ", remaining(due)]] as const;
+  const margin = state.cols > 0 ? " " : "";
+  const separator = state.cols >= 4 ? ` ${theme.accent}│ ` : "";
+  const available = Math.max(0, state.cols - width(margin) - width(separator));
+  const wantedLeft = Math.max(...left.map(([label, value]) => width(label + value)));
+  const wantedRight = Math.max(...right.map(([label, value]) => width(label + value)));
+  // Natural-width blocks, packed left. Share space only when titles must shrink.
+  const leftWidth = Math.min(wantedLeft, Math.max(Math.floor(available / 2), available - wantedRight));
+  const rightWidth = Math.min(wantedRight, available - leftWidth);
   const block = (label: string, value: string, size: number) => {
     const content = `${theme.muted}${truncate(label, size)}${theme.accent}${truncate(value, Math.max(0, size - width(label)))}`;
     return pad(content, size);
   };
   const row = (leftLabel: string, leftValue: string, rightLabel: string, rightValue: string) =>
-    `${theme.appBg}${block(leftLabel, leftValue, leftWidth)}${separator}${block(rightLabel, rightValue, rightWidth)}${theme.reset}`;
-  return [row("  Next Event: ", title(next), " Next Deadline: ", title(due)), row("  Happens in: ", remaining(next), " Due in: ", remaining(due))];
+    `${theme.appBg}${pad(margin + block(leftLabel, leftValue, leftWidth) + separator + block(rightLabel, rightValue, rightWidth), state.cols)}${theme.reset}`;
+  return [row(...left[0], ...right[0]), row(...left[1], ...right[1])];
 }

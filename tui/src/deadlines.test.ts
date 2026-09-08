@@ -84,7 +84,7 @@ test("next-event status respects due times, date-only day boundaries, recurrence
   const noon = new Date("2026-09-09T12:00:00").getTime();
   expect(nextDeadline([due], noon)?.date).toBe("2026-09-09");
   const status = renderStatusline(s, noon).join("\n");
-  expect(status).toContain("Next Deadline:"); expect(status).toContain("12h00m");
+  expect(status).toContain("Next Deadline:"); expect(status).toContain("0d12h0m");
   due.recurrence = { frequency: "weekly", interval: 1, count: 3 };
   due.completedDates = ["2026-09-09"];
   expect(nextDeadline([due], noon)?.date).toBe("2026-09-16");

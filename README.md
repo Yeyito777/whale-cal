@@ -157,8 +157,10 @@ The frame, mode indicator, and draft are muted when the prompt is unfocused
 white text, and pale-blue highlighting for recognized commands and subcommands;
 event titles and other free-form arguments remain white.
 Below the bottom separator, two side-by-side, two-line status blocks show
-`Next Event:` / `Happens in: 1h30m` on the left and `Next Deadline:` / `Due in:`
-on the right, with muted labels and accent-colored values. Each independently
+`Next Event:` / `Happens in: 0d1h30m` on the left and `Next Deadline:` / `Due in:`
+on the right, with muted labels and accent-colored values. Blocks use their natural
+content widths, packed from the left with one leading space and a ` │ ` separator.
+Countdowns always include days, hours, and minutes (for example `2d3h4m`). Each independently
 finds the next incomplete item of its type using current local time and visible
 calendars, not the selected date, and respects recurrence limits. All-day events
 start at local midnight; date-only deadlines are due at the end of their day.
