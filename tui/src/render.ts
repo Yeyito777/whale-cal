@@ -6,7 +6,7 @@ import type { Calendar, DateKey, EventOccurrence } from "@whale-cal/shared/types
 import { COMMANDS } from "./commands";
 import { isPromptFocused } from "./focus";
 import { stylePromptText } from "./prompt-style";
-import { daySchedule, durationLabel, scheduleNow, scheduleWindow } from "./day-schedule";
+import { daySchedule, durationLabel, scheduleNow, scheduleOverlaps, scheduleWindow } from "./day-schedule";
 import { refreshCompletion } from "./completion";
 import { completionMenu } from "./completion-menu";
 import { renderStatusline, STATUSLINE_HEIGHT } from "./statusline";
@@ -37,15 +37,16 @@ function calendarFor(state: AppState, id: string): Calendar | undefined {
   return state.database.calendars.find(calendar => calendar.id === id);
 }
 
-function eventLabel(state: AppState, occurrence: EventOccurrence, max: number): string {
+function eventLabel(state: AppState, occurrence: EventOccurrence, max: number, concurrent = false): string {
   const event = occurrence.event;
   const calendar = calendarFor(state, event.calendarId);
   const time = event.kind === "deadline" ? event.startTime ? `Due ${event.startTime} ` : "Due " : event.startTime ? `${event.startTime} ` : "";
   const repeat = event.recurrence ? "↻ " : "";
-  const plain = truncate(`${time}${repeat}${event.title}`, Math.max(0, max - 2));
-  if (eventIsCompleted(event, occurrence.startDate)) return `${theme.muted}✓ ${theme.strike}${plain}${theme.strikeOff}${theme.reset}`;
+  const done = eventIsCompleted(event, occurrence.startDate);
+  const plain = truncate(`${time}${repeat}${event.title}`, Math.max(0, max - (done && concurrent ? 4 : 2)));
+  if (done) return `${theme.muted}${concurrent ? "∥ ✓" : "✓"} ${theme.strike}${plain}${theme.strikeOff}${theme.reset}`;
   const color = deadlineIsOverdue(event, occurrence.startDate) ? theme.warning : eventColor(calendar?.color ?? "#1d9bf0");
-  return `${color}${event.kind === "deadline" ? "◆" : "•"} ${plain}${theme.reset}`;
+  return `${color}${event.kind === "deadline" ? "◆" : concurrent ? "∥" : "•"} ${plain}${theme.reset}`;
 }
 
 function renderTopbar(state: AppState): string {
@@ -129,6 +130,7 @@ function renderMonth(state: AppState, widthValue: number, height: number, absolu
     const weekHeight = Math.floor(cellHeight / matrix.length) + (week < cellHeight % matrix.length ? 1 : 0);
     const dates = matrix[week]!;
     const perDay = dates.map(date => occurrences.filter(event => event.startDate <= date && event.endDate >= date));
+    const overlaps = dates.map((date, day) => scheduleOverlaps(daySchedule(perDay[day]!, date).rows));
     let left = absoluteLeft;
     for (let day = 0; day < 7; day++) {
       if (weekHeight) state.layout.monthCells.push({ date: dates[day]!, left, right: left + widths[day]! - 1,
@@ -152,7 +154,7 @@ function renderMonth(state: AppState, widthValue: number, height: number, absolu
           content = `${color} ${number}${count}${theme.boldOff}`;
         } else if (line === weekHeight - 1 && events.length > weekHeight - 1) {
           content = `${theme.muted} +${events.length - line + 1} more`;
-        } else if (events[line - 1]) content = ` ${eventLabel(state, events[line - 1]!, size - 1)}`;
+        } else if (events[line - 1]) content = ` ${eventLabel(state, events[line - 1]!, size - 1, overlaps[day]!.has(line - 1))}`;
         return selectedCellContent(content, size, date === state.selectedDate);
       }).join(join);
     }
@@ -182,10 +184,11 @@ function renderWeek(state: AppState, widthValue: number, height: number, absolut
   const perDay = dates.map(key => occurrencesForRange(
     state.database.events.filter(event => calendarFor(state, event.calendarId)?.visible), key, key,
   ));
+  const overlaps = dates.map((date, day) => scheduleOverlaps(daySchedule(perDay[day]!, date).rows));
   for (let row = 2; row < height; row++) {
     rows[row] = dates.map((key, i) => {
       const occurrence = perDay[i]![row - 2];
-      const content = occurrence ? ` ${eventLabel(state, occurrence, widths[i]! - 1)}` : "";
+      const content = occurrence ? ` ${eventLabel(state, occurrence, widths[i]! - 1, overlaps[i]!.has(row - 2))}` : "";
       return selectedCellContent(content, widths[i]!, key === state.selectedDate);
     }).join(`${theme.appBg}${theme.borderUnfocused}│${theme.reset}`);
   }
@@ -199,6 +202,13 @@ function renderAgenda(state: AppState, widthValue: number, height: number): stri
   const occurrences = occurrencesForRange(
     state.database.events.filter(event => calendarFor(state, event.calendarId)?.visible), state.selectedDate, end,
   );
+  // Agenda entries may span midnight: mark a reservation if it overlaps on any
+  // displayed day, using the same day-clipped intervals as the day/week views.
+  const concurrentIds = new Set<string>();
+  for (let date = state.selectedDate; date <= end; date = addDays(date, 1)) {
+    const daily = occurrences.filter(item => item.startDate <= date && item.endDate >= date);
+    for (const index of scheduleOverlaps(daySchedule(daily, date).rows).keys()) concurrentIds.add(daily[index]!.id);
+  }
   let row = 1, currentDate = "";
   for (const occurrence of occurrences) {
     if (row >= height) break;
@@ -214,9 +224,10 @@ function renderAgenda(state: AppState, widthValue: number, height: number): stri
     const calendar = calendarFor(state, occurrence.event.calendarId);
     state.layout.eventRows.push({ index: 0, date: occurrence.startDate, eventId: occurrence.event.id, row: state.layout.bodyTop + row, left: state.layout.mainLeft, right: state.cols });
     const done = eventIsCompleted(occurrence.event, occurrence.startDate);
-    const label = truncate(occurrence.event.title, Math.max(0, widthValue - width(`   ${time} ● `)));
+    const concurrent = concurrentIds.has(occurrence.id);
+    const label = truncate(occurrence.event.title, Math.max(0, widthValue - width(`   ${time} ● `) - (done && concurrent ? 2 : 0)));
     const overdue = deadlineIsOverdue(occurrence.event, occurrence.startDate);
-    const title = done ? `${theme.muted}✓ ${theme.strike}${label}${theme.strikeOff}` : `${overdue ? theme.warning : eventColor(calendar?.color ?? "#1d9bf0")}${occurrence.event.kind === "deadline" ? "◆" : "●"} ${overdue ? theme.warning : theme.text}${label}`;
+    const title = done ? `${theme.muted}${concurrent ? "∥ ✓" : "✓"} ${theme.strike}${label}${theme.strikeOff}` : `${overdue ? theme.warning : eventColor(calendar?.color ?? "#1d9bf0")}${occurrence.event.kind === "deadline" ? "◆" : concurrent ? "∥" : "●"} ${overdue ? theme.warning : theme.text}${label}`;
     rows[row++] = segment(`${isSelected ? " ▸" : "  "} ${theme.muted}${time} ${title}`, widthValue, isSelected ? theme.sidebarSelBg : theme.appBg);
     if (occurrence.event.location && row < height) rows[row++] = segment(`${theme.muted}                  @ ${occurrence.event.location}`, widthValue);
   }
@@ -265,9 +276,18 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
   const todayBadge = state.selectedDate === todayKey() ? todayHeader("Today", 7) + " " : " ";
   putList(0, `${todayBadge}${theme.text}${theme.bold}${formatLongDate(state.selectedDate)}${theme.boldOff}`);
   const schedule = daySchedule(occurrences, state.selectedDate);
+  const overlaps = scheduleOverlaps(schedule.rows);
   const now = scheduleNow(schedule.rows, state.selectedDate);
   const missingEnds = occurrences.filter(({ event }) => event.kind !== "deadline" && event.startTime && !event.endTime).length;
-  const listTop = now && missingEnds ? 4 : 3;
+  const summaries: string[] = [];
+  if (now) {
+    const context = now.rows.map(item => item.kind === "free" ? "Free time" : occurrences[item.eventIndex]!.event.title).join(" + ");
+    summaries.push(`${theme.accent}${theme.bold} Now ${now.time}${theme.boldOff}${theme.text} · ${context}`);
+  }
+  if (overlaps.size) summaries.push(`${theme.accent} ∥ ${overlaps.size} events overlap${theme.muted} · select one for shared times`);
+  if (missingEnds) summaries.push(`${theme.muted} ${missingEnds} missing end time${missingEnds === 1 ? "" : "s"} · excluded from free-time total`);
+  if (!occurrences.length && !now) summaries.push(`${theme.muted} Nothing scheduled. A little breathing room.`);
+  const listTop = 2 + Math.max(1, summaries.length);
   const capacity = Math.max(1, listHeight - listTop);
   const start = scheduleWindow(schedule.rows, state.selectedEventIndex, capacity);
   const range = schedule.rows.length > capacity ? ` · ${start + 1}–${Math.min(schedule.rows.length, start + capacity)} / ${schedule.rows.length}` : "";
@@ -275,12 +295,7 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
   const events = occurrences.length - deadlines;
   const counts = [events || !deadlines ? `${events} event${events === 1 ? "" : "s"}` : "", deadlines ? `${deadlines} deadline${deadlines === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
   putList(1, `${theme.muted} ${counts} · ${durationLabel(schedule.freeMinutes)} free${range}`);
-  if (!occurrences.length) putList(2, `${theme.muted} Nothing scheduled. A little breathing room.`);
-  if (now) {
-    const context = now.rows.map(item => item.kind === "free" ? "Free time" : occurrences[item.eventIndex]!.event.title).join(" + ");
-    putList(2, `${theme.accent}${theme.bold} Now ${now.time}${theme.boldOff}${theme.text} · ${context}`);
-  }
-  if (missingEnds) putList(now ? 3 : 2, `${theme.muted} ${missingEnds} missing end time${missingEnds === 1 ? "" : "s"} · excluded from free-time total`);
+  summaries.forEach((summary, index) => putList(2 + index, summary));
   for (let i = start; i < Math.min(schedule.rows.length, start + capacity); i++) {
     const item = schedule.rows[i]!;
     const row = listTop + i - start;
@@ -294,10 +309,11 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
     const occurrence = occurrences[item.eventIndex]!;
     const active = item.eventIndex === state.selectedEventIndex;
     const calendar = calendarFor(state, occurrence.event.calendarId);
-    const title = truncate(occurrence.event.title, listWidth - 21 - (current ? 4 : 0));
     const done = eventIsCompleted(occurrence.event, occurrence.startDate);
+    const concurrent = overlaps.has(item.eventIndex);
+    const title = truncate(occurrence.event.title, listWidth - 21 - (current ? 4 : 0) - (done && concurrent ? 2 : 0));
     const overdue = deadlineIsOverdue(occurrence.event, occurrence.startDate);
-    const styledTitle = done ? `${theme.muted}✓ ${theme.strike}${title}${theme.strikeOff}` : `${overdue ? theme.warning : eventColor(calendar?.color ?? "#1d9bf0")}${occurrence.event.kind === "deadline" ? "◆" : "●"} ${overdue ? theme.warning : theme.text}${title}`;
+    const styledTitle = done ? `${theme.muted}${concurrent ? "∥ ✓" : "✓"} ${theme.strike}${title}${theme.strikeOff}` : `${overdue ? theme.warning : eventColor(calendar?.color ?? "#1d9bf0")}${occurrence.event.kind === "deadline" ? "◆" : concurrent ? "∥" : "●"} ${overdue ? theme.warning : theme.text}${title}`;
     const content = `${active ? theme.accent : theme.muted} ${active ? "▸" : " "} ${timeStyle}${pad(item.time, 13)}${theme.boldOff} ${nowTag}${styledTitle}`;
     putList(row, content, active);
     state.layout.eventRows.push({ index: item.eventIndex, left, right: left + listWidth - 1, row: top + row + 1 });
@@ -320,6 +336,16 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
     if (event.kind === "deadline") add("Due point only · does not reserve time.", theme.muted);
     else if (event.startTime && !event.endTime) add("End time not set; no duration reserved in the free-time calculation.", theme.muted);
     add(`● ${calendar?.name ?? "Unknown calendar"}`, eventColor(calendar?.color ?? "#1d9bf0"));
+    const concurrent = overlaps.get(state.selectedEventIndex) ?? [];
+    if (concurrent.length) {
+      details.push(""); add("∥ Concurrent with", theme.accent);
+      for (const match of concurrent) {
+        const other = occurrences[match.eventIndex]!;
+        const otherCalendar = calendarFor(state, other.event.calendarId);
+        add(`${other.event.title} · ${otherCalendar?.name ?? "Unknown calendar"}`, eventColor(otherCalendar?.color ?? "#1d9bf0"));
+        add(`${match.time} · ${durationLabel(match.end - match.start)} shared`, theme.muted);
+      }
+    }
     if (event.location) { details.push(""); add("Location", theme.muted); add(event.location); }
     const recurrence = recurrenceLabel(selected);
     if (recurrence) { details.push(""); add("Repeats", theme.muted); add(recurrence); }

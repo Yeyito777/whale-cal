@@ -53,6 +53,35 @@ export function scheduleNow(rows: readonly ScheduleRow[], date: DateKey, now = n
   return { time: clock(minutes), rows: rows.filter(row => row.start <= minutes && minutes < row.end) };
 }
 
+export interface ScheduleOverlap { eventIndex: number; start: number; end: number; time: string }
+
+/** Direct intersections of explicit reservations, not transitive "conflict groups".
+ * Adjacent events and zero-duration markers cannot overlap. Completed reservations
+ * still occupy their original time, just as they do in availability calculations. */
+export function scheduleOverlaps(rows: readonly ScheduleRow[]): Map<number, ScheduleOverlap[]> {
+  const events = rows.filter(row => row.kind === "event" && row.end > row.start).sort((a, b) => a.start - b.start);
+  const overlaps = new Map<number, ScheduleOverlap[]>();
+  for (let i = 0; i < events.length; i++) {
+    const a = events[i]!;
+    if (a.kind !== "event") continue;
+    for (let j = i + 1; j < events.length; j++) {
+      const b = events[j]!;
+      if (b.start >= a.end) break;
+      if (b.kind !== "event") continue;
+      const start = Math.max(a.start, b.start), end = Math.min(a.end, b.end);
+      if (end <= start) continue;
+      const add = (index: number, other: number) => {
+        const matches = overlaps.get(index) ?? [];
+        matches.push({ eventIndex: other, start, end, time: range(start, end) });
+        overlaps.set(index, matches);
+      };
+      add(a.eventIndex, b.eventIndex);
+      add(b.eventIndex, a.eventIndex);
+    }
+  }
+  return overlaps;
+}
+
 /** Scroll by schedule rows but keep keyboard selection attached to real events. */
 export function scheduleWindow(rows: readonly ScheduleRow[], eventIndex: number, capacity: number): number {
   const selected = Math.max(0, rows.findIndex(row => row.kind === "event" && row.eventIndex === eventIndex));

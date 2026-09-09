@@ -114,6 +114,17 @@ the calendar, updates automatically, and leaves your selection and scroll positi
 alone. Overlapping events are all marked; deadlines and durationless markers
 are not treated as ongoing blocks. Other dates do not show a Now marker.
 
+Concurrent timed reservations use a `∥` marker in month, week, agenda, and day
+views, retaining their calendar colors. The day view counts events with overlaps;
+select one to see **Concurrent with**, the other event and calendar names, and
+the exact shared interval and duration. Only direct intersections are listed:
+back-to-back events are not concurrent, and a chain of overlaps does not imply
+every event overlaps every other one. Intentional overlaps are not treated as
+errors. Hidden calendars, deadlines, all-day notes, and missing-end markers do
+not contribute overlaps. Completed reservations still retain their time, with
+the checkmark and strikethrough preserved. Free time continues to use the union
+of occupied intervals, not the sum of overlapping durations.
+
 The event form uses `Tab`/`Shift+Tab` (or `j`/`k` in normal mode) to move between
 fields, `i`/`a` to enter insert mode, `Esc` to return to normal mode, and
 `Ctrl+S` or `Enter` in normal mode to save.

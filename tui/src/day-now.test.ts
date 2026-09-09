@@ -49,8 +49,8 @@ test("live day rendering keeps selection independent and updates from busy to fr
   let frame = buildFrame(s);
   let plain = frame.rows.map(stripAnsi).join("\n");
   expect(plain).toContain("Now 10:35 · Lecture + Call");
-  expect(plain).toContain("Now ● Lecture");
-  expect(plain).toContain("Now ● Call");
+  expect(plain).toContain("Now ∥ Lecture");
+  expect(plain).toContain("Now ∥ Call");
   const selectedRow = frame.rows.find(row => stripAnsi(row).includes("▸ 12:15–13:00"))!;
   expect(selectedRow).toContain(theme.sidebarSelBg);
   expect(s.selectedEventIndex).toBe(2);
@@ -58,7 +58,7 @@ test("live day rendering keeps selection independent and updates from busy to fr
   plain = buildFrame(s).rows.map(stripAnsi).join("\n");
   expect(plain).toContain("Now 11:00 · Free time");
   expect(plain).toContain("Now ○ Free");
-  expect(plain).not.toContain("Now ● Lecture");
+  expect(plain).not.toContain("Now ∥ Lecture");
   s.selectedDate = "2026-09-08";
   expect(buildFrame(s).rows.map(stripAnsi).join("\n")).not.toContain("Now");
 });
