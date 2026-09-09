@@ -30,7 +30,7 @@ export type CommandAction =
 export const COMMANDS = [
   ["/help", "show keys and commands"], ["/today", "jump to today"], ["/goto", "select YYYY-MM-DD"],
   ["/deadline", "create a deadline, not a time block"],
-  ["/view", "month, week, or agenda"], ["/new", "quick-create an event"], ["/edit", "edit selected event"],
+  ["/view", "month, week, agenda, or deadlines"], ["/new", "quick-create an event"], ["/edit", "edit selected event"],
   ["/delete", "delete selected event"], ["/search", "find an event"], ["/calendar", "new/toggle calendars"],
   ["/done", "mark selected event done"], ["/undone", "mark selected event unfinished"],
   ["/group", "organize calendars into groups"],
@@ -50,7 +50,7 @@ export function runCommand(text: string, state: AppState): CommandAction {
       if (!args[0] || !isDateKey(args[0])) return { type: "error", message: "Usage: /goto YYYY-MM-DD" };
       return { type: "goto", date: args[0] };
     case "/view":
-      if (!(["month", "week", "agenda"] as string[]).includes(args[0] ?? "")) return { type: "error", message: "Usage: /view month|week|agenda" };
+      if (!(["month", "week", "agenda", "deadlines"] as string[]).includes(args[0] ?? "")) return { type: "error", message: "Usage: /view month|week|agenda|deadlines" };
       return { type: "view", view: args[0] as CalendarView };
     case "/new": case "/deadline": {
       const kind = name!.toLowerCase() === "/deadline" ? "deadline" : "event";

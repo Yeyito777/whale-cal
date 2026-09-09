@@ -1,4 +1,5 @@
-import { addDays, isDateKey, isTimeKey, occurrencesOnDate, todayKey } from "@whale-cal/shared/dates";
+import { deadlineKey, deadlineOccurrences, filterDeadlines, type DeadlineFilter } from "./deadline-list";
+import { addDays, eventIsCompleted, isDateKey, isTimeKey, occurrencesOnDate, todayKey } from "@whale-cal/shared/dates";
 import type { Calendar, CalendarDatabase, CalendarEvent, CalendarItemKind, CalendarView, DateKey, EventDraft, EventOccurrence, RecurrenceRule } from "@whale-cal/shared/types";
 import { focusCalendar } from "./focus";
 
@@ -58,6 +59,10 @@ export interface AppState {
   collapsedGroupIds: string[];
   hiddenCalendarIdsBySource: Record<string, string[]>;
   view: CalendarView;
+  deadlineFilter: DeadlineFilter;
+  deadlineIndex: number;
+  deadlineSelectedKey: string | null;
+  deadlineMarkedKeys: string[];
   focus: Focus;
   mainFocus: "calendar" | "prompt";
   sidebarOpen: boolean;
@@ -84,7 +89,7 @@ export function emptyDatabase(): CalendarDatabase {
 export function createState(): AppState {
   return {
     database: emptyDatabase(), selectedDate: todayKey(), selectedEventIndex: 0, selectedCalendarIndex: 0, selectedGroupId: null, collapsedGroupIds: [], hiddenCalendarIdsBySource: {},
-    view: "month", focus: "calendar", mainFocus: "calendar", sidebarOpen: false, prompt: null, editor: null, confirmDelete: null,
+    view: "month", deadlineFilter: "pending", deadlineIndex: 0, deadlineSelectedKey: null, deadlineMarkedKeys: [], focus: "calendar", mainFocus: "calendar", sidebarOpen: false, prompt: null, editor: null, confirmDelete: null,
     dayOpen: false, detailScroll: 0, dayTimelineScroll: null, helpOpen: false, notice: { text: "Connecting to cald…", kind: "info", at: Date.now() }, remoteAlias: null,
     connected: false, cols: process.stdout.columns || 100, rows: process.stdout.rows || 30, pendingKeys: "",
     layout: { sidebarWidth: 0, calendarRows: [], monthCells: [], mainLeft: 1, bodyTop: 2, bodyBottom: 20, actions: [], eventRows: [], editorFields: [] },
@@ -124,6 +129,7 @@ export function eventsOnSelectedDate(state: AppState): EventOccurrence[] {
 }
 
 export function selectedOccurrence(state: AppState): EventOccurrence | null {
+  if (state.view === "deadlines" && !state.dayOpen) return selectedDeadline(state);
   const occurrences = eventsOnSelectedDate(state);
   if (occurrences.length === 0) return null;
   state.selectedEventIndex = Math.max(0, Math.min(state.selectedEventIndex, occurrences.length - 1));
@@ -264,6 +270,47 @@ export function settleEditorSave(state: AppState, reqId: string, event: Calendar
   selectDate(state, state.editor.saveDate ?? event.startDate);
   state.editor = null;
   focusCalendar(state);
-  state.dayOpen = true;
+  state.dayOpen = state.view !== "deadlines";
+  if (!state.dayOpen) state.deadlineSelectedKey = `${event.id}@${state.selectedDate}`;
   state.selectedEventIndex = Math.max(0, eventsOnSelectedDate(state).findIndex(item => item.event.id === event.id));
+}
+
+export function deadlinesInView(state: AppState): EventOccurrence[] {
+  const items = filterDeadlines(deadlineOccurrences(visibleEvents(state)), state.deadlineFilter);
+  if (state.deadlineFilter === "all") items.sort((a, b) => Number(eventIsCompleted(a.event, a.startDate)) - Number(eventIsCompleted(b.event, b.startDate)));
+  const keys = new Set(items.map(deadlineKey));
+  state.deadlineMarkedKeys = state.deadlineMarkedKeys.filter(key => keys.has(key));
+  const index = items.findIndex(item => deadlineKey(item) === state.deadlineSelectedKey);
+  state.deadlineIndex = index >= 0 ? index : Math.max(0, Math.min(state.deadlineIndex, items.length - 1));
+  state.deadlineSelectedKey = items[state.deadlineIndex] ? deadlineKey(items[state.deadlineIndex]!) : null;
+  return items;
+}
+
+export function selectedDeadline(state: AppState): EventOccurrence | null {
+  return deadlinesInView(state)[state.deadlineIndex] ?? null;
+}
+
+export function moveDeadlineSelection(state: AppState, amount: number): void {
+  const items = deadlinesInView(state);
+  state.deadlineIndex = Math.max(0, Math.min(items.length - 1, state.deadlineIndex + amount));
+  state.deadlineSelectedKey = items[state.deadlineIndex] ? deadlineKey(items[state.deadlineIndex]!) : null;
+}
+
+export function setDeadlineFilter(state: AppState, filter: DeadlineFilter): void {
+  state.deadlineFilter = filter; state.deadlineMarkedKeys = [];
+  state.deadlineIndex = 0; state.deadlineSelectedKey = null;
+}
+
+export function markDeadline(state: AppState): void {
+  const item = selectedDeadline(state);
+  if (!item) return;
+  const key = deadlineKey(item);
+  state.deadlineMarkedKeys = state.deadlineMarkedKeys.includes(key)
+    ? state.deadlineMarkedKeys.filter(value => value !== key) : [...state.deadlineMarkedKeys, key];
+}
+
+export function deadlineCompletionTargets(state: AppState): EventOccurrence[] {
+  const items = deadlinesInView(state);
+  return state.deadlineMarkedKeys.length ? items.filter(item => state.deadlineMarkedKeys.includes(deadlineKey(item)))
+    : items[state.deadlineIndex] ? [items[state.deadlineIndex]!] : [];
 }

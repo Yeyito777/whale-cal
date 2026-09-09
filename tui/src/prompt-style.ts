@@ -4,7 +4,7 @@ import { theme } from "./theme";
 
 const commandNames = new Set<string>([...COMMANDS.map(([name]) => name), "/h", "/q", "/exit"]);
 const subcommands: Record<string, readonly string[]> = {
-  "/view": ["month", "week", "agenda"],
+  "/view": ["month", "week", "agenda", "deadlines"],
   "/calendar": ["new", "toggle"],
   "/group": ["new", "create", "move", "ungroup", "rename", "delete"],
   "/ssh": ["cancel"],

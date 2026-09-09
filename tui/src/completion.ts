@@ -27,7 +27,7 @@ export function commandCompletions(text: string, cursor: number, state: AppState
       ["/group ", () => [["new", "Create group"], ["move", "Move calendar into group"], ["ungroup", "Remove calendar from group"], ["rename", "Rename group"], ["delete", "Remove group; preserve calendars"]]],
       ["/calendar toggle ", () => state.database.calendars.map(c => [c.name, calendarIsVisible(state, c.id) ? "Visible calendar" : "Hidden calendar"] as const)],
       ["/calendar ", () => [["new", "Create a calendar"], ["toggle", "Show or hide a calendar"]]],
-      ["/view ", () => [["month", "Month grid"], ["week", "Week overview"], ["agenda", "Upcoming events"]]],
+      ["/view ", () => [["month", "Month grid"], ["week", "Week overview"], ["agenda", "Upcoming events"], ["deadlines", "Deadline checklist"]]],
       ["/ssh ", () => [...aliases().map(alias => [alias, "SSH calendar daemon"] as const), ["cancel", "Return to local calendar"]]],
       ["/goto ", () => [...new Set([state.selectedDate, todayKey(), addDays(todayKey(), 1)])].map(date => [date, "Jump to date"] as const)],
       ["/new ", () => [["today", "New event today"], ["tomorrow", "New event tomorrow"], ...["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map(day => [day, "New event on this weekday"] as const)]],

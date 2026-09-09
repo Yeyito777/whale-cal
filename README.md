@@ -64,7 +64,8 @@ current GUI launchd domain when available and starts automatically at login.
 | `;` | mark the selected event done / unfinished |
 | `d` | delete selected event (with confirmation) |
 | `J` / `K` | next / previous event on the selected day |
-| `v` | cycle month, week, and agenda views |
+| `v` | cycle month, week, agenda, and deadlines views |
+| `gj` | open the deadline checklist |
 | `g g` | jump to today |
 | `/` | command prompt (`/help` lists commands) |
 | `Ctrl+J` / `Ctrl+K` | switch sidebar / main panel (not prompt / calendar) |
@@ -94,6 +95,34 @@ once that palette is used up instead of repeating the same cycle. Hidden and
 custom-colored calendars are included when choosing; deleting a calendar frees
 its color for reuse. Existing colors and explicit `--color '#rrggbb'` choices
 are preserved. Omit `--color` for automatic assignment, including via the CLI.
+
+### Deadline checklist
+
+Press `g` then `j`, click **Deadlines**, or use `/view deadlines`. This is a
+separate due-date list, not a timeline of reservations. It includes all one-off
+deadlines (including old overdue items and distant future dates), plus recurring
+occurrences through the next 12 months; that horizon is shown in the view.
+Local calendar filters apply here too.
+
+The list defaults to **Pending**. **Completed** and **All** show finished items
+with checkmarks and strikethrough. Overdue, Today, Upcoming, and Completed sections
+make urgency clear; wider terminals also show the selected item's notes and details.
+
+- `j`/`k`, arrows, or mouse wheel navigate; `gg`/`G` jump to first/last.
+- `;` toggles completion of the selected deadline; its checkmark is clickable.
+- Space or `m` marks/unmarks a row for a bulk action. Marks themselves are local.
+- `D` completes marked deadlines; `U` reopens them. With no marks, these operate
+  on the selected deadline. The **Done**/**Reopen** buttons do the same.
+- **Mark all** marks every deadline in the current status/calendar filter, not
+  just the viewport. **Clear** clears marks. Changing the status filter clears them.
+- `f` cycles Pending/Completed/All; filter tabs are also clickable.
+- `Enter`/`e` edits; `n`/`a` creates a deadline. `d` deletes with confirmation.
+- Escape or `q` returns to the month view; `Ctrl+C` quits the client.
+
+Completion and reopening of recurring deadlines always target specific occurrence
+dates, including in bulk. Editing or deleting still affects the entire series.
+Saving an edit returns to the deadline list. `/done` and `/undone` operate on its
+selected deadline as well.
 
 ### Calendar groups
 

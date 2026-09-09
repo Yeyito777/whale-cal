@@ -1,3 +1,4 @@
+import { renderDeadlines } from "./deadline-view";
 import {
   addDays, endOfWeek, deadlineIsOverdue, eventIsCompleted, formatItemTime, formatLongDate, formatMonthYear, formatShortDate,
   monthMatrix, occurrencesForRange, startOfWeek, todayKey, weekdayLabels,
@@ -53,7 +54,7 @@ function eventLabel(state: AppState, occurrence: EventOccurrence, max: number): 
 function renderTopbar(state: AppState): string {
   const route = state.remoteAlias ? `SSH:${state.remoteAlias}` : "local";
   const status = state.connected ? "● synced" : "○ offline";
-  const title = ` ${theme.accent}${theme.bold}Whale Cal${theme.boldOff}${theme.muted} · ${formatMonthYear(state.selectedDate)}`;
+  const title = ` ${theme.accent}${theme.bold}Whale Cal${theme.boldOff}${theme.muted} · ${state.view === "deadlines" && !state.dayOpen ? "Deadlines" : formatMonthYear(state.selectedDate)}`;
   const right = truncate(`${status} · ${route}`, Math.max(0, state.cols - width(title) - 3));
   return segment(`${title}${" ".repeat(Math.max(1, state.cols - width(title) - width(right) - 1))}${theme.muted}${right} `, state.cols, theme.sidebarBg);
 }
@@ -67,10 +68,11 @@ function renderToolbar(state: AppState): string {
     line += `${active ? theme.sidebarSelBg + theme.text : theme.appBg + theme.muted}${text}${theme.reset} `;
     state.layout.actions.push({ action: key, left, right: left + width(text) - 1, row: 2 });
   };
-  action("‹", "previous"); action("Today", "today"); action("›", "next");
-  for (const view of ["month", "week", "agenda"]) action(view[0]!.toUpperCase() + view.slice(1), view, !state.dayOpen && state.view === view);
+  if (state.view !== "deadlines" || state.dayOpen) { action("‹", "previous"); action("Today", "today"); action("›", "next"); }
+  for (const view of ["month", "week", "agenda", "deadlines"]) action(view[0]!.toUpperCase() + view.slice(1), view, !state.dayOpen && state.view === view);
   if (state.dayOpen && state.cols >= 80) action("Day", "day", true);
-  action("+ Event", "new");
+  action(state.view === "deadlines" && !state.dayOpen ? "+ Deadline" : "+ Event", "new");
+  if (state.view === "deadlines" && !state.dayOpen) { action("Edit", "edit"); action("Delete", "delete"); }
   if (state.dayOpen) {
     const selected = selectedOccurrence(state);
     if (selected) action(eventIsCompleted(selected.event, selected.startDate) ? "Reopen" : "Done", "complete");
@@ -378,17 +380,20 @@ function renderEditorOverlay(state: AppState, rows: string[], editor: EditorStat
 
 function renderHelpOverlay(state: AppState, rows: string[]): void {
   const content = [
-    ["h j k l", "move by day / week"], ["[  ]", "previous / next month"], ["t or gg", "today"],
-    ["Enter", "open selected day"], ["n / a", "new event"], ["e", "edit selected event"],
+    ...(state.view === "deadlines" ? [
+      ["j / k", "next / previous deadline"], ["Space / m", "mark deadline"],
+      ["D / U", "complete / reopen marked"], ["f", "cycle status filter"],
+    ] : [["h j k l", "move by day / week"], ["[  ]", "previous / next month"], ["t or gg", "today"], ["gj", "deadline checklist"]]),
+    ["Enter", "open selected day / edit deadline"], ["n / a", "new event"], ["e", "edit selected event"],
     ["d", "delete selected event"], [";", "done / unfinished"], ["J / K", "next / previous event"], ["v", "cycle view"],
     ["/", "open command prompt"],
     ["Ctrl+J/K", "sidebar / main panel"], ["Ctrl+N", "calendar / prompt"],
     ["Ctrl+P", "new event"], ["Ctrl+S", "toggle sidebar"], ["Ctrl+Shift+R", "restart cald"],
-    ["q / Ctrl+C", "quit"],
-  ];
+    ["q / Ctrl+C", "back / quit"],
+  ].slice(0, Math.max(1, state.rows - STATUSLINE_HEIGHT - 10));
   const boxWidth = Math.max(48, Math.min(68, state.cols - 4));
   const height = content.length + 6;
-  const top = Math.max(2, Math.floor((state.rows - height) / 2) + 1);
+  const top = Math.max(2, Math.floor((state.rows - STATUSLINE_HEIGHT - 3 - height) / 2) + 1);
   const left = Math.max(1, Math.floor((state.cols - boxWidth) / 2) + 1);
   const put = (row: number, content: string) => putOverlayRow(rows, row, left, boxWidth, content);
   put(top - 1, `${theme.borderFocused}┌${center(`${theme.bold} Whale Cal help `, boxWidth - 2)}┐`);
@@ -476,6 +481,7 @@ export function buildFrame(state: AppState): { rows: string[]; cursor: string } 
   rows[1] = renderToolbar(state);
   const sidebar = sidebarWidth ? renderSidebar(state, bodyHeight, sidebarWidth) : [];
   const main = state.dayOpen ? Array.from({ length: bodyHeight }, () => segment("", mainWidth))
+    : state.view === "deadlines" ? renderDeadlines(state, mainWidth, bodyHeight)
     : state.view === "month" ? renderMonth(state, mainWidth, bodyHeight, sidebarWidth + 1)
     : state.view === "week" ? renderWeek(state, mainWidth, bodyHeight, sidebarWidth + 1)
       : renderAgenda(state, mainWidth, bodyHeight);

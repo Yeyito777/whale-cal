@@ -37,9 +37,9 @@ test("sizes argument menus to their contents, handles narrow windows and sanitiz
   const state = createState();
   const menu = { items: commandCompletions("/view ", 6, state), selection: 0 };
   const popup = completionMenu(menu, 100, 20);
-  expect(popup.rows).toHaveLength(3);
-  expect(popup.top).toBe(17);
-  expect(popup.width).toBeLessThan(30);
+  expect(popup.rows).toHaveLength(4);
+  expect(popup.top).toBe(16);
+  expect(popup.width).toBeLessThan(40);
   for (const columns of [16, 54, 80]) {
     const narrow = completionMenu({ items: [{ label: "東京👩‍💻\nexample", description: "tab\tand\x1bcontrol", value: "", cursor: 0 }], selection: 0 }, columns, 12);
     expect(narrow.rows.every(row => width(row) <= columns - 2)).toBe(true);

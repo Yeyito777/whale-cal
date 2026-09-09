@@ -92,4 +92,4 @@ export type EventPatch = Partial<Omit<EventDraft, "startTime" | "endTime" | "loc
   recurrence?: RecurrenceRule | null;
 };
 
-export type CalendarView = "month" | "week" | "agenda";
+export type CalendarView = "month" | "week" | "agenda" | "deadlines";

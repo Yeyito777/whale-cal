@@ -20,7 +20,7 @@ export function loadPreferences(state: AppState, file = path()): void {
     const prefs = JSON.parse(readFileSync(file, "utf8")) as Preferences;
     if (prefs.tui?.selectedDate && isDateKey(prefs.tui.selectedDate)) state.selectedDate = prefs.tui.selectedDate;
     const view = prefs.tui?.view ?? prefs.defaultView;
-    if (view && ["month", "week", "agenda"].includes(view)) state.view = view;
+    if (view && ["month", "week", "agenda", "deadlines"].includes(view)) state.view = view;
     if (typeof prefs.tui?.sidebarOpen === "boolean") state.sidebarOpen = prefs.tui.sidebarOpen;
     if (Array.isArray(prefs.tui?.collapsedGroupIds)) state.collapsedGroupIds = prefs.tui.collapsedGroupIds.filter(id => typeof id === "string");
     const filters = prefs.tui?.hiddenCalendarIdsBySource;

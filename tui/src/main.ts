@@ -1,3 +1,5 @@
+import { handleViewNavigation } from "./view-navigation";
+import { deadlineKey, type DeadlineFilter } from "./deadline-list";
 import { addDays, addMonths, eventIsCompleted, occurrencesForRange, todayKey } from "@whale-cal/shared/dates";
 import type { CalendarEvent, CalendarItemKind, CalendarView, EventDraft, EventPatch } from "@whale-cal/shared/types";
 import { DaemonClient, type ClientEvent } from "./client";
@@ -14,7 +16,7 @@ import { InputBuffer, parseInput, type KeyEvent, type MouseEvent } from "./input
 import { loadPreferences, savePreferences } from "./preferences";
 import { render } from "./render";
 import {
-  createEditor, createState, editorDraft, editorItemKind, setEditorItemKind, eventsOnSelectedDate,
+  deadlineCompletionTargets, deadlinesInView, markDeadline, moveDeadlineSelection, setDeadlineFilter, createEditor, createState, editorDraft, editorItemKind, setEditorItemKind, eventsOnSelectedDate,
   moveDate, selectDate, selectedCalendar, selectedOccurrence, setNotice, settleEditorSave, syncEditorDates, toggleCalendarVisibility, visibleEvents, type AppState, type EditorState,
 } from "./state";
 import {
@@ -107,6 +109,7 @@ function onClientEvent(event: ClientEvent): void {
         const index = state.database.events.findIndex(item => item.id === event.event.id);
         if (index === -1) state.database.events.push(event.event); else state.database.events[index] = event.event;
       }
+      if (state.view === "deadlines" && !state.dayOpen) deadlinesInView(state);
       settleEditorSave(state, event.reqId, event.event);
       settle(event.reqId);
       scheduleRender();
@@ -176,7 +179,7 @@ function scheduleReconnect(): void {
   }, 1000);
 }
 
-function openNewEditor(kind: CalendarItemKind = "event"): void {
+function openNewEditor(kind: CalendarItemKind = state.view === "deadlines" && !state.dayOpen ? "deadline" : "event"): void {
   if (state.database.calendars.length === 0) { notice("No calendar is available.", "error"); return; }
   state.editor = createEditor(state);
   setEditorItemKind(state.editor, kind);
@@ -185,6 +188,7 @@ function openNewEditor(kind: CalendarItemKind = "event"): void {
 function editSelected(): void {
   const occurrence = selectedOccurrence(state);
   if (!occurrence) { openNewEditor(); return; }
+  if (state.view === "deadlines" && !state.dayOpen) state.selectedDate = occurrence.startDate;
   state.editor = createEditor(state, occurrence.event);
 }
 
@@ -245,7 +249,7 @@ function toggleCalendar(id: string, name: string): void {
 }
 
 function cycleView(): void {
-  const views: CalendarView[] = ["month", "week", "agenda"];
+  const views: CalendarView[] = ["month", "week", "agenda", "deadlines"];
   state.view = views[(views.indexOf(state.view) + 1) % views.length]!;
 }
 
@@ -256,8 +260,8 @@ function execute(action: CommandAction): void {
     case "help": state.helpOpen = true; return;
     case "today": selectDate(state, todayKey()); return;
     case "goto": selectDate(state, action.date); return;
-    case "view": state.view = action.view; return;
-    case "new": action.draft ? createEvent(action.draft) : openNewEditor(action.kind); return;
+    case "view": state.view = action.view; state.dayOpen = false; return;
+    case "new": action.draft ? createEvent(action.draft) : openNewEditor(action.kind ?? "event"); return;
     case "edit": editSelected(); return;
     case "delete": confirmDelete(); return;
     case "complete": completeSelected(action.completed); return;
@@ -398,6 +402,40 @@ function moveSelectedEvent(amount: number): void {
   state.dayTimelineScroll = null;
 }
 
+function completeDeadlineSelection(completed: boolean): void {
+  const targets = deadlineCompletionTargets(state).filter(item => eventIsCompleted(item.event, item.startDate) !== completed);
+  if (!targets.length) { notice("No deadlines need that change."); return; }
+  for (const item of targets) track(client.completeEvent(item.event.id, completed, item.startDate), `${completed ? "Completed" : "Reopened"} “${item.event.title}”.`);
+}
+
+function handleDeadlineKey(key: KeyEvent): void {
+  if (key.type === "escape") { state.view = "month"; return; }
+  if (key.type === "down") { moveDeadlineSelection(state, 1); return; }
+  if (key.type === "up") { moveDeadlineSelection(state, -1); return; }
+  if (key.type === "ctrl-d") { moveDeadlineSelection(state, 5); return; }
+  if (key.type === "ctrl-u") { moveDeadlineSelection(state, -5); return; }
+  if (key.type === "enter") { if (selectedOccurrence(state)) editSelected(); return; }
+  if (key.type !== "char") return;
+  switch (key.char) {
+    case "j": moveDeadlineSelection(state, 1); return;
+    case "k": moveDeadlineSelection(state, -1); return;
+    case "G": moveDeadlineSelection(state, Number.MAX_SAFE_INTEGER); return;
+    case " ": case "m": markDeadline(state); return;
+    case ";": completeSelected(); return;
+    case "D": completeDeadlineSelection(true); return;
+    case "U": completeDeadlineSelection(false); return;
+    case "f": { const filters: DeadlineFilter[] = ["pending", "completed", "all"]; setDeadlineFilter(state, filters[(filters.indexOf(state.deadlineFilter) + 1) % filters.length]!); return; }
+    case "n": case "a": openNewEditor("deadline"); return;
+    case "e": if (selectedOccurrence(state)) editSelected(); return;
+    case "d": confirmDelete(); return;
+    case "v": cycleView(); return;
+    case "q": state.view = "month"; return;
+    case "/": case ":": focusPrompt(state, "/"); return;
+    case "i": focusPrompt(state); return;
+    case "?": state.helpOpen = true; return;
+  }
+}
+
 function handleDayKey(key: KeyEvent): void {
   if (key.type === "ctrl-d") { state.detailScroll += 5; return; }
   if (key.type === "ctrl-u") { state.detailScroll = Math.max(0, state.detailScroll - 5); return; }
@@ -431,6 +469,7 @@ function handleDayKey(key: KeyEvent): void {
 }
 
 function handleNormalKey(key: KeyEvent): void {
+  if (state.focus === "calendar" && state.view === "deadlines") { handleDeadlineKey(key); return; }
   if (state.focus === "sidebar" && sidebarGroupKey(state, key.type === "char" ? key.char ?? "" : key.type)) return;
   if (state.focus === "sidebar" && (key.type === "left" || key.type === "right")) {
     if (key.type === "right") focusCalendar(state);
@@ -460,12 +499,7 @@ function handleNormalKey(key: KeyEvent): void {
     else if (char === "q") cleanup();
     return;
   }
-  if (state.pendingKeys === "g") {
-    state.pendingKeys = "";
-    if (char === "g") { selectDate(state, todayKey()); return; }
-  }
   switch (char) {
-    case "g": state.pendingKeys = "g"; return;
     case "h": moveDate(state, -1); return;
     case "l": moveDate(state, 1); return;
     case "j": moveDate(state, 7); return;
@@ -510,6 +544,7 @@ function handleKey(key: KeyEvent): void {
     if (result === "new") openNewEditor();
     else if (result !== "handled") {
       if (isPromptFocused(state)) handlePromptKey(key);
+      else if (handleViewNavigation(state, key)) { /* consumed g-prefix */ }
       else if (state.dayOpen && state.focus === "calendar") handleDayKey(key);
       else handleNormalKey(key);
     }
@@ -615,7 +650,18 @@ function handleMouse(event: MouseEvent): void {
     }
     const hit = state.layout.actions.find(hit => hit.row === event.row && event.col >= hit.left && event.col <= hit.right);
     if (hit) {
+      if (hit.action.startsWith("deadline-filter:")) { setDeadlineFilter(state, hit.action.slice(16) as DeadlineFilter); scheduleRender(); return; }
+      if (hit.action.startsWith("deadline-toggle:")) {
+        const index = Number(hit.action.slice(16)), items = deadlinesInView(state);
+        state.deadlineIndex = index; state.deadlineSelectedKey = items[index] ? deadlineKey(items[index]!) : null;
+        completeSelected(); scheduleRender(); return;
+      }
       switch (hit.action) {
+        case "deadline-done": completeDeadlineSelection(true); break;
+        case "deadline-reopen": completeDeadlineSelection(false); break;
+        case "deadline-mark": markDeadline(state); break;
+        case "deadline-mark-all": state.deadlineMarkedKeys = deadlinesInView(state).map(deadlineKey); break;
+        case "deadline-clear": state.deadlineMarkedKeys = []; break;
         case "new": openNewEditor(); break;
         case "edit": if (selectedOccurrence(state)) editSelected(); break;
         case "delete": confirmDelete(); break;
@@ -628,7 +674,7 @@ function handleMouse(event: MouseEvent): void {
           selectDate(state, state.dayOpen ? addDays(state.selectedDate, direction) : state.view === "month" ? addMonths(state.selectedDate, direction) : addDays(state.selectedDate, direction * 7));
           break;
         }
-        case "month": case "week": case "agenda": state.dayOpen = false; state.view = hit.action; break;
+        case "month": case "week": case "agenda": case "deadlines": state.dayOpen = false; state.view = hit.action; break;
       }
       scheduleRender(); return;
     }
@@ -648,6 +694,14 @@ function handleMouse(event: MouseEvent): void {
     } else if (event.action === "press" && event.button === 0) {
       const hit = state.layout.eventRows.find(hit => hit.row === event.row && event.col >= hit.left && event.col <= hit.right);
       if (hit) { state.selectedEventIndex = hit.index; state.detailScroll = 0; }
+    }
+    scheduleRender(); return;
+  }
+  if (state.view === "deadlines") {
+    if (event.button === 64 || event.button === 65) moveDeadlineSelection(state, event.button === 64 ? -1 : 1);
+    else if (event.action === "press" && event.button === 0) {
+      const hit = state.layout.eventRows.find(hit => hit.row === event.row && event.col >= hit.left && event.col <= hit.right);
+      if (hit) { const items = deadlinesInView(state); state.deadlineIndex = hit.index; state.deadlineSelectedKey = items[hit.index] ? deadlineKey(items[hit.index]!) : null; }
     }
     scheduleRender(); return;
   }
