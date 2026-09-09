@@ -15,12 +15,22 @@ export interface RecurrenceRule {
 
 export interface Calendar {
   id: string;
+  groupId?: string;
   name: string;
   color: string;
   visible: boolean;
   createdAt: string;
   updatedAt: string;
 }
+
+export interface CalendarGroup {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type CalendarPatch = Partial<Pick<Calendar, "name" | "color" | "visible">> & { groupId?: string | null };
 
 export interface CalendarEvent {
   /** Missing on legacy records means event. Deadlines use startDate/startTime as due date/time. */
@@ -56,6 +66,7 @@ export interface CalendarDatabase {
   version: 1;
   revision: number;
   calendars: Calendar[];
+  groups?: CalendarGroup[];
   events: CalendarEvent[];
 }
 

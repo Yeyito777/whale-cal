@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "
 import { dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { eventIsCompleted, isDateKey, isTimeKey, occurrencesOnDate } from "@whale-cal/shared/dates";
-import type { Calendar, CalendarDatabase, CalendarEvent, EventDraft, EventPatch, RecurrenceRule } from "@whale-cal/shared/types";
+import type { Calendar, CalendarGroup, CalendarPatch, CalendarDatabase, CalendarEvent, EventDraft, EventPatch, RecurrenceRule } from "@whale-cal/shared/types";
 import { databasePath } from "@whale-cal/shared/paths";
 import { log } from "./log";
 import { CALENDAR_COLORS, nextCalendarColor } from "./calendar-colors";
@@ -198,7 +198,8 @@ export class CalendarStore {
     this.commit();
   }
 
-  createCalendar(nameValue: string, colorValue?: string): Calendar {
+  createCalendar(nameValue: string, colorValue?: string, groupId?: string): Calendar {
+    if (groupId !== undefined) this.group(groupId);
     const name = cleanText(nameValue, "Calendar name", 100, true)!;
     if (this.db.calendars.some(item => item.name.toLowerCase() === name.toLowerCase())) {
       throw new Error("A calendar with that name already exists.");
@@ -206,14 +207,18 @@ export class CalendarStore {
     const color = colorValue?.trim() || nextCalendarColor(this.db.calendars.map(calendar => calendar.color));
     if (!/^#[0-9a-f]{6}$/i.test(color)) throw new Error("Calendar color must be #rrggbb.");
     const now = nowIso();
-    const calendar: Calendar = { id: randomUUID(), name, color, visible: true, createdAt: now, updatedAt: now };
+    const calendar: Calendar = { id: randomUUID(), name, color, visible: true, createdAt: now, updatedAt: now, ...(groupId !== undefined ? { groupId } : {}) };
     this.db.calendars.push(calendar);
     this.commit();
     return structuredClone(calendar);
   }
 
-  updateCalendar(id: string, patch: Partial<Pick<Calendar, "name" | "color" | "visible">>): Calendar {
-    const calendar = this.calendar(id);
+  updateCalendar(id: string, patch: CalendarPatch): Calendar {
+    const calendar = { ...this.calendar(id) };
+    if (patch.groupId !== undefined) {
+      if (patch.groupId === null) delete calendar.groupId;
+      else { this.group(patch.groupId); calendar.groupId = patch.groupId; }
+    }
     if (patch.name !== undefined) calendar.name = cleanText(patch.name, "Calendar name", 100, true)!;
     if (patch.color !== undefined) {
       if (!/^#[0-9a-f]{6}$/i.test(patch.color)) throw new Error("Calendar color must be #rrggbb.");
@@ -221,6 +226,7 @@ export class CalendarStore {
     }
     if (patch.visible !== undefined) calendar.visible = !!patch.visible;
     calendar.updatedAt = nowIso();
+    this.db.calendars[this.db.calendars.findIndex(item => item.id === id)] = calendar;
     this.commit();
     return structuredClone(calendar);
   }
@@ -231,6 +237,39 @@ export class CalendarStore {
     if (this.db.calendars.length === 1) throw new Error("The last calendar cannot be deleted.");
     if (this.db.events.some(event => event.calendarId === id)) throw new Error("Move or delete this calendar's events first.");
     this.db.calendars.splice(index, 1);
+    this.commit();
+  }
+
+  private group(id: string): CalendarGroup {
+    const group = this.db.groups?.find(item => item.id === id);
+    if (!group) throw new Error("Calendar group not found.");
+    return group;
+  }
+
+  private groupName(value: string, exceptId?: string): string {
+    const name = cleanText(value, "Group name", 100, true)!;
+    if (this.db.groups?.some(group => group.id !== exceptId && group.name.toLowerCase() === name.toLowerCase())) throw new Error("A group with that name already exists.");
+    return name;
+  }
+
+  createGroup(value: string): CalendarGroup {
+    const name = this.groupName(value), now = nowIso();
+    const group = { id: randomUUID(), name, createdAt: now, updatedAt: now };
+    (this.db.groups ??= []).push(group); this.commit();
+    return structuredClone(group);
+  }
+
+  updateGroup(id: string, value: string): CalendarGroup {
+    const group = this.group(id), name = this.groupName(value, id);
+    group.name = name; group.updatedAt = nowIso(); this.commit();
+    return structuredClone(group);
+  }
+
+  /** Removing a container never removes its calendars, events, or visibility choices. */
+  deleteGroup(id: string): void {
+    this.group(id);
+    this.db.groups = this.db.groups!.filter(group => group.id !== id);
+    for (const calendar of this.db.calendars) if (calendar.groupId === id) { delete calendar.groupId; calendar.updatedAt = nowIso(); }
     this.commit();
   }
 

@@ -39,7 +39,7 @@ export interface LayoutState {
   dayList?: { left: number; right: number; top: number; bottom: number };
   dayTimeline?: { scroll: number; maxScroll: number };
   sidebarWidth: number;
-  calendarRows: Array<{ calendarId: string; row: number }>;
+  calendarRows: Array<{ calendarId?: string; groupId?: string; row: number }>;
   monthCells: CalendarCellHit[];
   mainLeft: number;
   bodyTop: number;
@@ -54,6 +54,8 @@ export interface AppState {
   selectedDate: DateKey;
   selectedEventIndex: number;
   selectedCalendarIndex: number;
+  selectedGroupId: string | null;
+  collapsedGroupIds: string[];
   view: CalendarView;
   focus: Focus;
   mainFocus: "calendar" | "prompt";
@@ -80,7 +82,7 @@ export function emptyDatabase(): CalendarDatabase {
 
 export function createState(): AppState {
   return {
-    database: emptyDatabase(), selectedDate: todayKey(), selectedEventIndex: 0, selectedCalendarIndex: 0,
+    database: emptyDatabase(), selectedDate: todayKey(), selectedEventIndex: 0, selectedCalendarIndex: 0, selectedGroupId: null, collapsedGroupIds: [],
     view: "month", focus: "calendar", mainFocus: "calendar", sidebarOpen: false, prompt: null, editor: null, confirmDelete: null,
     dayOpen: false, detailScroll: 0, dayTimelineScroll: null, helpOpen: false, notice: { text: "Connecting to cald…", kind: "info", at: Date.now() }, remoteAlias: null,
     connected: false, cols: process.stdout.columns || 100, rows: process.stdout.rows || 30, pendingKeys: "",

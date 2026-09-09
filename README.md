@@ -89,6 +89,49 @@ custom-colored calendars are included when choosing; deleting a calendar frees
 its color for reuse. Existing colors and explicit `--color '#rrggbb'` choices
 are preserved. Omit `--color` for automatic assignment, including via the CLI.
 
+### Calendar groups
+
+Named, one-level groups organize the sidebar without changing calendar visibility
+or event ownership. Groups can be empty; ungrouped calendars remain below them.
+Use `j`/`k` to navigate headers and calendars. `Enter`/Space on a group folds or
+unfolds it; `h`/`l` collapses/expands it. Clicking its header also folds it.
+On a calendar, `Enter`/Space still toggles visibility. Folding is a local UI
+preference saved across restarts, not a way to hide the group's events.
+
+Create and organize groups from the prompt (names can contain spaces):
+
+```text
+/group new Yeyito
+/group move Personal -> Yeyito
+/group move UofT Classes -> Yeyito
+/group rename Yeyito -> Yeyito School
+/group ungroup Personal
+```
+
+`/group delete NAME` removes only the container and ungroups its calendars.
+The external tool exposes the same operations through the daemon:
+
+```bash
+cal groups --json
+cal group create --name Yeyito --json
+cal calendar update Personal --group Yeyito --json
+cal calendar create --name Classes --group Yeyito --json
+cal calendars --group Yeyito --json
+cal calendar update Personal --ungroup --json
+cal group update Yeyito --name "Yeyito School" --json
+cal group delete "Yeyito School" --yes --json
+```
+
+Group/calendar names or stable IDs are accepted for membership operations; use
+IDs if names are ambiguous. IPC uses `list_groups`, `create_group`, `update_group`,
+and `delete_group`; calendar create/update accepts `groupId` (update with `null`
+to ungroup). Snapshots contain optional `groups`; existing databases remain
+compatible and nothing is automatically regrouped. Deleting a group never
+deletes calendars or events, and moving calendars preserves their colors,
+visibility, event IDs, recurrence, deadlines, and completion state.
+
+### Day details
+
 Pressing `Enter` on the calendar opens a detailed day panel. Within that panel,
 `j`/`k` selects an event, `h`/`l` moves between days, and `Enter` or `e` edits
 that selected event. `Esc` returns to the calendar. A day uses a split timeline

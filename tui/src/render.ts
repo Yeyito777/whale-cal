@@ -8,6 +8,7 @@ import { isPromptFocused } from "./focus";
 import { stylePromptText } from "./prompt-style";
 import { daySchedule, durationLabel, scheduleNow, scheduleOverlaps } from "./day-schedule";
 import { renderDayTimeline } from "./day-timeline";
+import { calendarSidebarRows, selectedSidebarIndex } from "./calendar-groups";
 import { refreshCompletion } from "./completion";
 import { completionMenu } from "./completion-menu";
 import { renderStatusline, STATUSLINE_HEIGHT } from "./statusline";
@@ -88,12 +89,20 @@ function renderSidebar(state: AppState, height: number, target: number): string[
   put(0, `${theme.text}${theme.bold} Calendars${theme.boldOff}`);
   put(1, `${theme.muted} ${state.database.calendars.filter(calendar => calendar.visible).length} visible`);
   const capacity = Math.max(1, height - 3);
-  const start = Math.max(0, Math.min(state.selectedCalendarIndex - Math.floor(capacity / 2), state.database.calendars.length - capacity));
-  for (let i = start; i < Math.min(state.database.calendars.length, start + capacity); i++) {
-    const calendar = state.database.calendars[i]!;
-    const selected = i === state.selectedCalendarIndex && state.focus === "sidebar";
-    put(3 + i - start, `${selected ? theme.accent + "▸" : " "} ${calendar.visible ? eventColor(calendar.color) + "●" : theme.muted + "○"} ${calendar.visible ? theme.text : theme.muted}${truncate(calendar.name, inner - 5)}`, selected);
-    if (3 + i - start < height) state.layout.calendarRows.push({ calendarId: calendar.id, row: state.layout.bodyTop + 3 + i - start });
+  const items = calendarSidebarRows(state), selection = selectedSidebarIndex(state, items);
+  const start = Math.max(0, Math.min(selection - Math.floor(capacity / 2), items.length - capacity));
+  for (let i = start; i < Math.min(items.length, start + capacity); i++) {
+    const item = items[i]!;
+    const selected = i === selection && state.focus === "sidebar";
+    if (item.kind === "group") {
+      put(3 + i - start, ` ${theme.text}${theme.bold}${item.collapsed ? "▸" : "▾"} ${truncate(item.group.name, inner - 8)}${theme.boldOff}${theme.muted} ${item.count}`, selected);
+      state.layout.calendarRows.push({ groupId: item.group.id, row: state.layout.bodyTop + 3 + i - start });
+    } else {
+      const calendar = item.calendar;
+      const indent = item.nested ? "  " : "";
+      put(3 + i - start, `${indent}${selected ? theme.accent + "▸" : " "} ${calendar.visible ? eventColor(calendar.color) + "●" : theme.muted + "○"} ${calendar.visible ? theme.text : theme.muted}${truncate(calendar.name, inner - 5 - indent.length)}`, selected);
+      state.layout.calendarRows.push({ calendarId: calendar.id, row: state.layout.bodyTop + 3 + i - start });
+    }
   }
   return rows;
 }

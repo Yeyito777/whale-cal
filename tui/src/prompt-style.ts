@@ -6,6 +6,7 @@ const commandNames = new Set<string>([...COMMANDS.map(([name]) => name), "/h", "
 const subcommands: Record<string, readonly string[]> = {
   "/view": ["month", "week", "agenda"],
   "/calendar": ["new", "toggle"],
+  "/group": ["new", "create", "move", "ungroup", "rename", "delete"],
   "/ssh": ["cancel"],
 };
 

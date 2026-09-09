@@ -5,7 +5,7 @@ import type { Readable, Writable } from "node:stream";
 import { existsSync } from "node:fs";
 import { isWindows, socketPath } from "@whale-cal/shared/paths";
 import type { Command, Event } from "@whale-cal/shared/protocol";
-import type { Calendar, EventDraft, EventPatch } from "@whale-cal/shared/types";
+import type { CalendarPatch, EventDraft, EventPatch } from "@whale-cal/shared/types";
 import { spawnSshProxy, validateSshAlias, type SshProcess } from "./ssh-transport";
 
 export interface RouteEvent {
@@ -228,7 +228,10 @@ export class DaemonClient {
   completeEvent(id: string, completed: boolean, occurrenceDate: string): string { const reqId = randomUUID(); this.write({ type: "complete_event", reqId, id, completed, occurrenceDate }); return reqId; }
   deleteEvent(id: string): string { const reqId = randomUUID(); this.write({ type: "delete_event", reqId, id }); return reqId; }
   createCalendar(name: string, color?: string): string { const reqId = randomUUID(); this.write({ type: "create_calendar", reqId, name, ...(color ? { color } : {}) }); return reqId; }
-  updateCalendar(id: string, patch: Partial<Pick<Calendar, "name" | "color" | "visible">>): string { const reqId = randomUUID(); this.write({ type: "update_calendar", reqId, id, patch }); return reqId; }
+  updateCalendar(id: string, patch: CalendarPatch): string { const reqId = randomUUID(); this.write({ type: "update_calendar", reqId, id, patch }); return reqId; }
+  createGroup(name: string): string { const reqId = randomUUID(); this.write({ type: "create_group", reqId, name }); return reqId; }
+  updateGroup(id: string, name: string): string { const reqId = randomUUID(); this.write({ type: "update_group", reqId, id, name }); return reqId; }
+  deleteGroup(id: string): string { const reqId = randomUUID(); this.write({ type: "delete_group", reqId, id }); return reqId; }
   bootstrap(): void { this.write({ type: "bootstrap" }); }
 
   /** Send an at-most-once restart request to the daemon behind the current route. */

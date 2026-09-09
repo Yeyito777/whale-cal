@@ -9,12 +9,22 @@ export interface CompletionState { items: CompletionItem[]; selection: number }
 export function commandCompletions(text: string, cursor: number, state: AppState, aliases = loadSshAliases): CompletionItem[] {
   const before = text.slice(0, cursor);
   if (!before.startsWith("/")) return [];
+  const moveGroup = /^\/group move .+ ->\s*/i.exec(before);
+  if (moveGroup) {
+    const start = moveGroup[0].length, fragment = before.slice(start).toLowerCase();
+    return (state.database.groups ?? []).filter(group => group.name.toLowerCase().startsWith(fragment)).map(group => ({ label: group.name, description: "Destination group", value: text.slice(0, start) + group.name, cursor: start + group.name.length }));
+  }
   let start = 0, end = text.indexOf(" ");
   if (end < 0) end = text.length;
   let fragment = before;
   let options: ReadonlyArray<readonly [string, string]> = COMMANDS;
   if (/^\/\S+\s/.test(before)) {
     const providers: Array<[string, () => ReadonlyArray<readonly [string, string]>]> = [
+      ["/group move ", () => state.database.calendars.map(c => [c.name + " -> ", "Move calendar into a group"] as const)],
+      ["/group ungroup ", () => state.database.calendars.filter(c => c.groupId).map(c => [c.name, "Remove from group"] as const)],
+      ["/group rename ", () => (state.database.groups ?? []).map(g => [g.name + " -> ", "Rename group"] as const)],
+      ["/group delete ", () => (state.database.groups ?? []).map(g => [g.name, "Remove group; preserve calendars"] as const)],
+      ["/group ", () => [["new", "Create group"], ["move", "Move calendar into group"], ["ungroup", "Remove calendar from group"], ["rename", "Rename group"], ["delete", "Remove group; preserve calendars"]]],
       ["/calendar toggle ", () => state.database.calendars.map(c => [c.name, c.visible ? "Visible calendar" : "Hidden calendar"] as const)],
       ["/calendar ", () => [["new", "Create a calendar"], ["toggle", "Show or hide a calendar"]]],
       ["/view ", () => [["month", "Month grid"], ["week", "Week overview"], ["agenda", "Upcoming events"]]],
@@ -29,7 +39,7 @@ export function commandCompletions(text: string, cursor: number, state: AppState
     start = provider[0].length;
     fragment = before.slice(start);
     options = provider[1]();
-    end = provider[0] === "/calendar toggle " || provider[0] === "/search " ? text.length : text.indexOf(" ", start);
+    end = provider[0] === "/calendar toggle " || provider[0] === "/search " || provider[0].startsWith("/group ") && provider[0] !== "/group " ? text.length : text.indexOf(" ", start);
     if (end < 0) end = text.length;
   }
   return options.filter(([label]) => label.toLowerCase().startsWith(fragment.toLowerCase())).map(([label, description]) => {

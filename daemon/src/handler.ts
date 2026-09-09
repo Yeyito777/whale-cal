@@ -55,6 +55,19 @@ export function createHandler(server: DaemonServer, store: CalendarStore, lifecy
           });
           return;
         }
+        case "list_groups":
+          server.send(client, { type: "groups_list", reqId: command.reqId, groups: store.snapshot().groups ?? [], revision: store.revision });
+          return;
+        case "create_group":
+          event = { type: "group_created", reqId: command.reqId, group: store.createGroup(command.name), revision: store.revision };
+          break;
+        case "update_group":
+          event = { type: "group_updated", reqId: command.reqId, group: store.updateGroup(command.id, command.name), revision: store.revision };
+          break;
+        case "delete_group":
+          store.deleteGroup(command.id);
+          event = { type: "group_deleted", reqId: command.reqId, id: command.id, revision: store.revision };
+          break;
         case "list_events": {
           if (!isDateKey(command.from) || !isDateKey(command.to)) throw new Error("Event range dates must use YYYY-MM-DD.");
           if (command.to < command.from) throw new Error("Event range end cannot be before its start.");
@@ -109,7 +122,7 @@ export function createHandler(server: DaemonServer, store: CalendarStore, lifecy
           event = { type: "event_deleted", reqId: command.reqId, id: command.id, revision: store.revision };
           break;
         case "create_calendar": {
-          const calendar = store.createCalendar(command.name, command.color);
+          const calendar = store.createCalendar(command.name, command.color, command.groupId);
           event = { type: "calendar_created", reqId: command.reqId, calendar, revision: store.revision };
           break;
         }

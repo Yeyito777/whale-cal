@@ -20,6 +20,10 @@ export type CommandAction =
   | { type: "reload" }
   | { type: "calendar_new"; name: string; color?: string }
   | { type: "calendar_toggle"; name: string }
+  | { type: "group_new"; name: string }
+  | { type: "group_rename"; id: string; name: string }
+  | { type: "group_delete"; id: string }
+  | { type: "calendar_group"; id: string; groupId: string | null }
   | { type: "search"; query: string }
   | { type: "error"; message: string };
 
@@ -29,6 +33,7 @@ export const COMMANDS = [
   ["/view", "month, week, or agenda"], ["/new", "quick-create an event"], ["/edit", "edit selected event"],
   ["/delete", "delete selected event"], ["/search", "find an event"], ["/calendar", "new/toggle calendars"],
   ["/done", "mark selected event done"], ["/undone", "mark selected event unfinished"],
+  ["/group", "organize calendars into groups"],
   ["/ssh", "route through a remote cald"], ["/reload", "reload canonical state"], ["/quit", "leave the TUI"],
 ] as const;
 
@@ -69,6 +74,37 @@ export function runCommand(text: string, state: AppState): CommandAction {
       if (!args[0]) return { type: "ssh_status" };
       if (args.length > 1) return { type: "error", message: "Usage: /ssh [alias|cancel]" };
       return args[0]!.toLowerCase() === "cancel" ? { type: "ssh_cancel" } : { type: "ssh_connect", alias: args[0]! };
+    case "/group": {
+      const operation = args.shift()?.toLowerCase();
+      const value = args.join(" ").trim();
+      const resolve = <T extends { id: string; name: string }>(items: T[], query: string): T | undefined => {
+        const direct = items.find(item => item.id === query);
+        if (direct) return direct;
+        const matches = items.filter(item => item.name.toLowerCase() === query.toLowerCase());
+        return matches.length === 1 ? matches[0] : undefined;
+      };
+      const groups = state.database.groups ?? [];
+      if ((operation === "new" || operation === "create") && value) return { type: "group_new", name: value };
+      if (operation === "move" || operation === "rename") {
+        const parts = value.split(/\s+->\s+/);
+        if (parts.length !== 2 || !parts[0] || !parts[1]) return { type: "error", message: operation === "move" ? "Usage: /group move CALENDAR -> GROUP" : "Usage: /group rename GROUP -> NEW NAME" };
+        if (operation === "move") {
+          const calendar = resolve(state.database.calendars, parts[0]), group = resolve(groups, parts[1]);
+          return calendar && group ? { type: "calendar_group", id: calendar.id, groupId: group.id } : { type: "error", message: "Calendar or group not found (or ambiguous); use its ID." };
+        }
+        const group = resolve(groups, parts[0]);
+        return group ? { type: "group_rename", id: group.id, name: parts[1] } : { type: "error", message: "Group not found (or ambiguous); use its ID." };
+      }
+      if (operation === "ungroup") {
+        const calendar = resolve(state.database.calendars, value);
+        return calendar ? { type: "calendar_group", id: calendar.id, groupId: null } : { type: "error", message: "Calendar not found (or ambiguous); use its ID." };
+      }
+      if (operation === "delete") {
+        const group = resolve(groups, value);
+        return group ? { type: "group_delete", id: group.id } : { type: "error", message: "Group not found (or ambiguous); use its ID." };
+      }
+      return { type: "error", message: "Use /group new NAME, move CALENDAR -> GROUP, ungroup CALENDAR, rename GROUP -> NAME, or delete GROUP (calendars preserved)." };
+    }
     case "/calendar": {
       const sub = args.shift()?.toLowerCase();
       if (sub === "new") {

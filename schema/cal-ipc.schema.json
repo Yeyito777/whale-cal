@@ -38,6 +38,11 @@
         "count": { "type": "integer", "minimum": 1, "maximum": 100000 }
       }
     },
+    "calendarGroup": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "createdAt", "updatedAt"],
+      "properties": { "id": { "type": "string" }, "name": { "type": "string", "minLength": 1, "maxLength": 100 }, "createdAt": { "type": "string", "format": "date-time" }, "updatedAt": { "type": "string", "format": "date-time" } }
+    },
     "calendar": {
       "type": "object",
       "additionalProperties": false,
@@ -47,6 +52,7 @@
         "name": { "type": "string" },
         "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
         "visible": { "type": "boolean" },
+        "groupId": { "type": "string", "description": "Optional group ID. Ungrouped when absent." },
         "createdAt": { "type": "string", "format": "date-time" },
         "updatedAt": { "type": "string", "format": "date-time" }
       }
@@ -130,11 +136,16 @@
         "version": { "const": 1 },
         "revision": { "type": "integer", "minimum": 0 },
         "calendars": { "type": "array", "items": { "$ref": "#/$defs/calendar" }, "minItems": 1 },
+        "groups": { "type": "array", "items": { "$ref": "#/$defs/calendarGroup" } },
         "events": { "type": "array", "items": { "$ref": "#/$defs/calendarEvent" } }
       }
     },
     "command": {
       "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["type", "reqId"], "properties": {"type": {"const": "list_groups"}, "reqId": {"$ref": "#/$defs/requestId"}}},
+        {"type": "object", "additionalProperties": false, "required": ["type", "reqId", "name"], "properties": {"type": {"const": "create_group"}, "reqId": {"$ref": "#/$defs/requestId"}, "name": {"type": "string", "minLength": 1, "maxLength": 100}}},
+        {"type": "object", "additionalProperties": false, "required": ["type", "reqId", "id", "name"], "properties": {"type": {"const": "update_group"}, "reqId": {"$ref": "#/$defs/requestId"}, "id": {"type": "string"}, "name": {"type": "string", "minLength": 1, "maxLength": 100}}},
+        {"type": "object", "additionalProperties": false, "required": ["type", "reqId", "id"], "properties": {"type": {"const": "delete_group"}, "reqId": {"$ref": "#/$defs/requestId"}, "id": {"type": "string"}}},
         {
           "type": "object", "additionalProperties": false,
           "required": ["type", "reqId"],
@@ -205,7 +216,7 @@
         {
           "type": "object", "additionalProperties": false,
           "required": ["type", "reqId", "name"],
-          "properties": { "type": { "const": "create_calendar" }, "reqId": { "$ref": "#/$defs/requestId" }, "name": { "type": "string", "minLength": 1, "maxLength": 100 }, "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" } }
+          "properties": { "type": { "const": "create_calendar" }, "reqId": { "$ref": "#/$defs/requestId" }, "name": { "type": "string", "minLength": 1, "maxLength": 100 }, "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }, "groupId": { "type": "string" } }
         },
         {
           "type": "object", "additionalProperties": false,
@@ -214,7 +225,7 @@
             "type": { "const": "update_calendar" }, "reqId": { "$ref": "#/$defs/requestId" }, "id": { "type": "string" },
             "patch": {
               "type": "object", "additionalProperties": false, "minProperties": 1,
-              "properties": { "name": { "type": "string", "minLength": 1, "maxLength": 100 }, "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }, "visible": { "type": "boolean" } }
+              "properties": { "name": { "type": "string", "minLength": 1, "maxLength": 100 }, "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }, "visible": { "type": "boolean" }, "groupId": { "type": ["string", "null"], "description": "Set to null to ungroup." } }
             }
           }
         },
@@ -228,6 +239,9 @@
     "event": {
       "description": "Response events are selected by their type and, where present, the originating reqId. Mutation events are broadcast to every connected client.",
       "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["type", "reqId", "groups", "revision"], "properties": {"type": {"const": "groups_list"}, "reqId": {"$ref": "#/$defs/requestId"}, "groups": {"type": "array", "items": {"$ref": "#/$defs/calendarGroup"}}, "revision": {"type": "integer", "minimum": 0}}},
+        {"type": "object", "additionalProperties": false, "required": ["type", "reqId", "group", "revision"], "properties": {"type": {"enum": ["group_created", "group_updated"]}, "reqId": {"$ref": "#/$defs/requestId"}, "group": {"$ref": "#/$defs/calendarGroup"}, "revision": {"type": "integer", "minimum": 0}}},
+        {"type": "object", "additionalProperties": false, "required": ["type", "reqId", "id", "revision"], "properties": {"type": {"const": "group_deleted"}, "reqId": {"$ref": "#/$defs/requestId"}, "id": {"type": "string"}, "revision": {"type": "integer", "minimum": 0}}},
         { "type": "object", "additionalProperties": false, "required": ["type", "reqId"], "properties": { "type": { "const": "pong" }, "reqId": { "$ref": "#/$defs/requestId" } } },
         { "type": "object", "additionalProperties": false, "required": ["type", "reqId"], "properties": { "type": { "const": "ack" }, "reqId": { "$ref": "#/$defs/requestId" } } },
         { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "protocolVersion", "schema"], "properties": { "type": { "const": "schema" }, "reqId": { "$ref": "#/$defs/requestId" }, "protocolVersion": { "const": 1 }, "schema": { "type": "object" } } },

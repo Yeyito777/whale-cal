@@ -2,7 +2,7 @@
 import { randomUUID } from "node:crypto";
 import { addDays, eventIsCompleted, formatItemTime, isDateKey, isTimeKey, todayKey } from "@whale-cal/shared/dates";
 import type { Command, Event } from "@whale-cal/shared/protocol";
-import type { Calendar, CalendarEvent, CalendarItemKind, EventDraft, EventPatch, RecurrenceRule } from "@whale-cal/shared/types";
+import type { Calendar, CalendarGroup, CalendarPatch, CalendarEvent, CalendarItemKind, EventDraft, EventPatch, RecurrenceRule } from "@whale-cal/shared/types";
 import { request, requestRaw } from "./connection";
 
 const HELP = `Whale Cal CLI — daemon-backed calendar access for people and AI agents
@@ -10,7 +10,11 @@ const HELP = `Whale Cal CLI — daemon-backed calendar access for people and AI 
 Usage:
   cal status [--json]
   cal schema
-  cal calendars [--json]
+  cal calendars [--group ID|NAME] [--json]
+  cal groups [--json]
+  cal group create --name TEXT [--json]
+  cal group update ID|NAME --name TEXT [--json]
+  cal group delete ID|NAME --yes [--json]
   cal events [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--calendar ID|NAME]
              [--query TEXT] [--include-hidden] [--json]
   cal event get ID [--json]
@@ -19,8 +23,8 @@ Usage:
   cal event delete ID --yes [--json]
   cal event complete ID [--date YYYY-MM-DD] [--json]
   cal event reopen ID [--date YYYY-MM-DD] [--json]
-  cal calendar create --name TEXT [--color '#rrggbb'] [--json]
-  cal calendar update ID [--name TEXT] [--color '#rrggbb'] [--show|--hide] [--json]
+  cal calendar create --name TEXT [--color '#rrggbb'] [--group ID|NAME] [--json]
+  cal calendar update ID|NAME [--name TEXT] [--color '#rrggbb'] [--show|--hide] [--group ID|NAME|--ungroup] [--json]
   cal calendar delete ID --yes [--json]
   cal ipc
 
@@ -59,7 +63,9 @@ Machine interface:
 Defaults: 'cal events' lists today through 30 days from today, inclusive.
 Omit --color when creating a calendar to pick a distinct unused color automatically.
 Use --color only for an intentional custom color.
-Delete commands require --yes. IDs are stable base-event/calendar IDs.`;
+Groups organize calendars; collapsing a group never hides its events.
+Deleting a group ungroups its calendars; it never deletes calendars or events.
+Delete commands require --yes. IDs are stable base-event/calendar/group IDs.`;
 
 class UsageError extends Error {}
 type OptionValue = string | true;
@@ -67,7 +73,7 @@ interface Parsed { positionals: string[]; options: Map<string, OptionValue>; }
 
 const BOOLEAN_OPTIONS = new Set([
   "json", "include-hidden", "yes", "notes-stdin", "show", "hide", "all-day",
-  "clear-location", "clear-notes", "clear-repeat",
+  "clear-location", "clear-notes", "clear-repeat", "ungroup",
 ]);
 
 function parse(values: string[]): Parsed {
@@ -153,6 +159,40 @@ async function calendars(): Promise<{ calendars: Calendar[]; revision: number }>
   return event;
 }
 
+async function groups(): Promise<CalendarGroup[]> {
+  const response = await request({ type: "list_groups", reqId: reqId() });
+  if (response.type !== "groups_list") throw new Error("Unexpected daemon response.");
+  return response.groups;
+}
+
+async function groupId(value: string): Promise<string> {
+  const list = await groups();
+  const id = list.find(group => group.id === value)?.id;
+  if (id) return id;
+  const matches = list.filter(group => group.name.toLowerCase() === value.toLowerCase());
+  if (matches.length === 1) return matches[0]!.id;
+  throw new UsageError(matches.length ? `Group '${value}' is ambiguous; use its ID.` : `Group '${value}' was not found.`);
+}
+
+async function groupCommand(operation: string | undefined, parsed: Parsed): Promise<void> {
+  allowed(parsed, operation === "delete" ? ["yes", "json"] : ["name", "json"]);
+  if (operation === "create") {
+    if (parsed.positionals.length || !option(parsed, "name")?.trim()) throw new UsageError("group create requires --name TEXT.");
+    const response = await request({ type: "create_group", reqId: reqId(), name: option(parsed, "name")! });
+    if (response.type !== "group_created") throw new Error("Unexpected daemon response.");
+    if (flag(parsed, "json")) printJson(response.group); else console.log(`Created. Group ID: ${response.group.id}`);
+  } else if (operation === "update" || operation === "delete") {
+    if (parsed.positionals.length !== 1) throw new UsageError(`group ${operation} requires one group ID or name.`);
+    if (operation === "delete" && !flag(parsed, "yes")) throw new UsageError("Group deletion requires --yes; member calendars will be ungrouped, not deleted.");
+    if (operation === "update" && !option(parsed, "name")?.trim()) throw new UsageError("group update requires --name TEXT.");
+    const id = await groupId(parsed.positionals[0]!);
+    const response = await request(operation === "delete" ? { type: "delete_group", reqId: reqId(), id } : { type: "update_group", reqId: reqId(), id, name: option(parsed, "name")! });
+    if (response.type === "group_deleted") { if (flag(parsed, "json")) printJson({ deleted: true, id }); else console.log("Group deleted; calendars preserved."); }
+    else if (response.type === "group_updated") { if (flag(parsed, "json")) printJson(response.group); else console.log(`Updated. Group ID: ${id}`); }
+    else throw new Error("Unexpected daemon response.");
+  } else throw new UsageError("group requires create, update, or delete.");
+}
+
 async function calendarId(value: string | undefined): Promise<string | undefined> {
   if (!value) return undefined;
   const list = (await calendars()).calendars;
@@ -200,11 +240,12 @@ async function schemaCommand(parsed: Parsed): Promise<void> {
 }
 
 async function calendarsCommand(parsed: Parsed): Promise<void> {
-  allowed(parsed, ["json"]);
+  allowed(parsed, ["json", "group"]);
   if (parsed.positionals.length) throw new UsageError("calendars takes no positional arguments.");
   const result = await calendars();
+  if (option(parsed, "group") !== undefined) { const id = await groupId(option(parsed, "group")!); result.calendars = result.calendars.filter(calendar => calendar.groupId === id); }
   if (flag(parsed, "json")) { printJson(result.calendars); return; }
-  for (const item of result.calendars) console.log(`${item.visible ? "visible" : "hidden "}  ${item.color}  ${item.name}  [calendar:${item.id}]`);
+  for (const item of result.calendars) console.log(`${item.visible ? "visible" : "hidden "}  ${item.color}  ${item.name}  [calendar:${item.id}]${item.groupId ? ` [group:${item.groupId}]` : ""}`);
 }
 
 async function eventsCommand(parsed: Parsed): Promise<void> {
@@ -325,26 +366,29 @@ async function eventDelete(parsed: Parsed): Promise<void> {
 }
 
 async function calendarCreate(parsed: Parsed): Promise<void> {
-  allowed(parsed, ["name", "color", "json"]);
+  allowed(parsed, ["name", "color", "group", "json"]);
   if (parsed.positionals.length) throw new UsageError("calendar create takes options, not positional arguments.");
   const name = option(parsed, "name");
   if (!name?.trim()) throw new UsageError("--name is required.");
-  const response = await request({ type: "create_calendar", reqId: reqId(), name, ...(option(parsed, "color") ? { color: option(parsed, "color") } : {}) });
+  const response = await request({ type: "create_calendar", reqId: reqId(), name, ...(option(parsed, "color") ? { color: option(parsed, "color") } : {}), ...(option(parsed, "group") !== undefined ? { groupId: await groupId(option(parsed, "group")!) } : {}) });
   if (response.type !== "calendar_created") throw new Error("Unexpected daemon response.");
   if (flag(parsed, "json")) printJson(response.calendar); else console.log(`Created. Calendar ID: ${response.calendar.id}`);
 }
 
 async function calendarUpdate(parsed: Parsed): Promise<void> {
-  allowed(parsed, ["name", "color", "show", "hide", "json"]);
+  allowed(parsed, ["name", "color", "show", "hide", "group", "ungroup", "json"]);
   if (parsed.positionals.length !== 1) throw new UsageError("calendar update requires exactly one calendar ID.");
   if (flag(parsed, "show") && flag(parsed, "hide")) throw new UsageError("Use either --show or --hide.");
-  const patch: Partial<Pick<Calendar, "name" | "color" | "visible">> = {};
+  if (option(parsed, "group") !== undefined && flag(parsed, "ungroup")) throw new UsageError("Use --group or --ungroup, not both.");
+  const patch: CalendarPatch = {};
+  if (option(parsed, "group") !== undefined) patch.groupId = await groupId(option(parsed, "group")!);
+  if (flag(parsed, "ungroup")) patch.groupId = null;
   if (option(parsed, "name") !== undefined) patch.name = option(parsed, "name")!;
   if (option(parsed, "color") !== undefined) patch.color = option(parsed, "color")!;
   if (flag(parsed, "show")) patch.visible = true;
   if (flag(parsed, "hide")) patch.visible = false;
   if (!Object.keys(patch).length) throw new UsageError("calendar update requires at least one field to change.");
-  const response = await request({ type: "update_calendar", reqId: reqId(), id: parsed.positionals[0]!, patch });
+  const response = await request({ type: "update_calendar", reqId: reqId(), id: (await calendarId(parsed.positionals[0]!))!, patch });
   if (response.type !== "calendar_updated") throw new Error("Unexpected daemon response.");
   if (flag(parsed, "json")) printJson(response.calendar); else console.log(`Updated. Calendar ID: ${response.calendar.id}`);
 }
@@ -387,6 +431,14 @@ async function main(argv: string[]): Promise<void> {
     case "status": await statusCommand(parsed); return;
     case "schema": await schemaCommand(parsed); return;
     case "calendars": await calendarsCommand(parsed); return;
+    case "groups": {
+      allowed(parsed, ["json"]);
+      if (parsed.positionals.length) throw new UsageError("groups takes no positional arguments.");
+      const list = await groups();
+      if (flag(parsed, "json")) printJson(list); else for (const group of list) console.log(`${group.name}  [group:${group.id}]`);
+      return;
+    }
+    case "group": await groupCommand(parsed.positionals.shift(), parsed); return;
     case "events": await eventsCommand(parsed); return;
     case "event": {
       const operation = parsed.positionals.shift();

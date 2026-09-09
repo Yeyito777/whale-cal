@@ -5,6 +5,7 @@ import { runCommand, type CommandAction } from "./commands";
 import { PromptController } from "./prompt";
 import { daySchedule } from "./day-schedule";
 import { moveTimelineSelection } from "./day-timeline";
+import { moveSidebarSelection, sidebarGroupKey, toggleGroupExpanded } from "./calendar-groups";
 import { focusCalendar, focusPrompt, focusSidebar, handleFocusKey, isPromptFocused } from "./focus";
 import { STATUSLINE_HEIGHT } from "./statusline";
 import { cycleCompletion } from "./completion";
@@ -122,6 +123,7 @@ function onClientEvent(event: ClientEvent): void {
       if (!applyRevision(event.revision)) return;
       state.database.calendars.push(event.calendar);
       state.selectedCalendarIndex = state.database.calendars.length - 1;
+      state.selectedGroupId = null;
       settle(event.reqId);
       scheduleRender();
       return;
@@ -138,6 +140,19 @@ function onClientEvent(event: ClientEvent): void {
       state.database.calendars = state.database.calendars.filter(item => item.id !== event.id);
       scheduleRender();
       return;
+    case "group_created":
+    case "group_updated": {
+      if (!applyRevision(event.revision)) return;
+      const groups = state.database.groups ??= [];
+      const index = groups.findIndex(group => group.id === event.group.id);
+      if (index < 0) groups.push(event.group); else groups[index] = event.group;
+      settle(event.reqId); scheduleRender(); return;
+    }
+    case "group_deleted":
+      // Deleting a container also updates its member calendars atomically.
+      if (state.selectedGroupId === event.id) state.selectedGroupId = null;
+      state.collapsedGroupIds = state.collapsedGroupIds.filter(id => id !== event.id);
+      client.bootstrap(); settle(event.reqId); return;
     case "error":
       if (event.reqId) pending.delete(event.reqId);
       if (event.reqId && state.editor?.saving === event.reqId) {
@@ -255,6 +270,10 @@ function execute(action: CommandAction): void {
       track(reqId, `${calendar.visible ? "Hid" : "Showed"} “${calendar.name}”.`);
       return;
     }
+    case "group_new": track(client.createGroup(action.name), `Created group “${action.name}”.`); return;
+    case "group_rename": track(client.updateGroup(action.id, action.name), `Renamed group to “${action.name}”.`); return;
+    case "group_delete": track(client.deleteGroup(action.id), "Group removed; calendars and events preserved."); return;
+    case "calendar_group": track(client.updateCalendar(action.id, { groupId: action.groupId }), action.groupId ? "Calendar moved into group." : "Calendar ungrouped."); return;
     case "search": {
       const query = action.query.toLowerCase();
       const match = state.database.events.find(event => `${event.title} ${event.location ?? ""} ${event.notes ?? ""}`.toLowerCase().includes(query));
@@ -406,12 +425,13 @@ function handleDayKey(key: KeyEvent): void {
 }
 
 function handleNormalKey(key: KeyEvent): void {
+  if (state.focus === "sidebar" && sidebarGroupKey(state, key.type === "char" ? key.char ?? "" : key.type)) return;
   if (state.focus === "sidebar" && (key.type === "left" || key.type === "right")) {
     if (key.type === "right") focusCalendar(state);
     return;
   }
   if (state.focus === "sidebar" && (key.type === "up" || key.type === "down")) {
-    state.selectedCalendarIndex = Math.max(0, Math.min(state.database.calendars.length - 1, state.selectedCalendarIndex + (key.type === "up" ? -1 : 1)));
+    moveSidebarSelection(state, key.type === "up" ? -1 : 1);
     return;
   }
   if (key.type === "left") { moveDate(state, -1); return; }
@@ -423,8 +443,8 @@ function handleNormalKey(key: KeyEvent): void {
   if (key.type !== "char" && key.type !== "enter") return;
   const char = key.type === "enter" ? "enter" : key.char!;
   if (state.focus === "sidebar") {
-    if (char === "j") state.selectedCalendarIndex = Math.min(state.database.calendars.length - 1, state.selectedCalendarIndex + 1);
-    else if (char === "k") state.selectedCalendarIndex = Math.max(0, state.selectedCalendarIndex - 1);
+    if (char === "j") moveSidebarSelection(state, 1);
+    else if (char === "k") moveSidebarSelection(state, -1);
     else if (char === "enter" || char === " ") {
       const calendar = selectedCalendar(state);
       if (calendar) track(client.updateCalendar(calendar.id, { visible: !calendar.visible }), `${calendar.visible ? "Hid" : "Showed"} “${calendar.name}”.`);
@@ -565,11 +585,16 @@ function handleMouse(event: MouseEvent): void {
     }
     const calendarHit = state.layout.calendarRows.find(hit => hit.row === event.row && event.col <= state.layout.sidebarWidth);
     if (calendarHit) {
+      if (calendarHit.groupId) {
+        toggleGroupExpanded(state, calendarHit.groupId);
+        focusSidebar(state); scheduleRender(); return;
+      }
       const index = state.database.calendars.findIndex(calendar => calendar.id === calendarHit.calendarId);
       if (index !== -1) {
         state.selectedCalendarIndex = index;
+        state.selectedGroupId = null;
         focusSidebar(state);
-        if (event.col <= 3) {
+        if (event.col <= (state.database.calendars[index]!.groupId ? 5 : 3)) {
           const calendar = state.database.calendars[index]!;
           track(client.updateCalendar(calendar.id, { visible: !calendar.visible }), `${calendar.visible ? "Hid" : "Showed"} “${calendar.name}”.`);
         }
@@ -603,7 +628,7 @@ function handleMouse(event: MouseEvent): void {
     }
   }
   if ((event.button === 64 || event.button === 65) && event.col < state.layout.mainLeft) {
-    state.selectedCalendarIndex = Math.max(0, Math.min(state.database.calendars.length - 1, state.selectedCalendarIndex + (event.button === 64 ? -1 : 1)));
+    moveSidebarSelection(state, event.button === 64 ? -1 : 1);
     scheduleRender(); return;
   }
   if (state.dayOpen) {
