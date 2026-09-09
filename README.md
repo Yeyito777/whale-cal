@@ -170,8 +170,12 @@ and does not jump the viewport to chase the clock. Other dates have no Now line.
 Selecting a card shows **Overlaps with** in its details: other event/calendar
 names and the exact shared intervals. Only direct intersections are listed,
 not transitive chains. Intentional overlaps are not errors. Completed cards
-retain their reserved time, checkmark, and strikethrough. Free time uses the union
-of occupied intervals, not their sum. Overview views keep their simple event
+retain their original time range, checkmark, and strikethrough as history, but
+no longer reserve time. Free time merges around them and appears as a green
+card alongside completed history. Those free cards are informational, never
+keyboard selections or editable items. Incomplete overlapping events still
+reserve their time. Free time uses the union of unfinished reservations, not
+their sum. Overview views keep their simple event
 lists without overlap symbols; open the day to inspect simultaneous blocks.
 
 The event form uses `Tab`/`Shift+Tab` (or `j`/`k` in normal mode) to move between
@@ -313,8 +317,13 @@ types. The next-item status block says **Next Due / Due in** for a deadline.
 
 Press `;` on a selected event, click **Done / Reopen** in the day toolbar, or
 use `/done` and `/undone`. Completed items stay visible with muted, crossed-out
-titles and a checkmark. They are omitted from the **Next Event** countdown;
-their scheduled time is unchanged, including in the day view's gap calculation.
+titles and a checkmark. They are omitted from the statusline countdowns and no
+longer block availability. Their stored start/end times are unchanged; the day
+timeline displays the completed card alongside the larger merged free block.
+For example, finishing a 12:15–13:00 task between free periods 11:00–12:15 and
+13:00–15:00 creates one 11:00–15:00 free block, with the finished task beside it.
+Reopening the task restores its reservation. Other unfinished reservations still
+block their own time, and recurring completion affects only that occurrence.
 Completion is saved by the daemon and synced to all connected clients.
 
 For recurring events, only the selected occurrence is marked done, never the

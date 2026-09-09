@@ -28,14 +28,14 @@ test("concurrency reports direct shared intervals, not transitive conflicts or a
   expect(analyze([event("A", "09:00", "10:00"), event("B", "10:00", "11:00")]).overlaps.size).toBe(0);
 });
 
-test("nested and identical intervals overlap, but point markers do not", () => {
+test("nested intervals overlap, but completed history and point markers do not reserve time", () => {
   const { overlaps, occurrences } = analyze([
     event("A", "10:00", "12:00"), event("B", "10:00", "12:00", { completed: true }),
     event("Nested", "10:35", "10:45"), event("Date note"), event("Unknown", "10:00"),
     event("Due", "10:35", undefined, { kind: "deadline" }),
   ]);
-  expect([...overlaps.keys()].map(i => occurrences[i]!.event.title).sort()).toEqual(["A", "B", "Nested"]);
-  expect([...overlaps.values()].every(matches => matches.length === 2)).toBe(true);
+  expect([...overlaps.keys()].map(i => occurrences[i]!.event.title).sort()).toEqual(["A", "Nested"]);
+  expect([...overlaps.values()].every(matches => matches.length === 1)).toBe(true);
 });
 
 test("overnight recurring occurrences overlap only inside the inspected day", () => {

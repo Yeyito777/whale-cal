@@ -302,7 +302,10 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
     const overdue = deadlineIsOverdue(event, selected.startDate);
     add(event.title, theme.bold + (done ? theme.muted + theme.strike : overdue ? theme.warning : theme.text));
     details.push(theme.strikeOff + theme.boldOff);
-    if (done) add("✓ Completed", theme.muted);
+    if (done) {
+      add("✓ Completed", theme.muted);
+      if (event.kind !== "deadline" && event.startTime && event.endTime) add("No longer reserves time; kept as history.", theme.muted);
+    }
     if (event.kind === "deadline") add(overdue ? "◆ Deadline · Overdue" : "◆ Deadline", overdue ? theme.warning : theme.muted);
     add(`${formatItemTime(event)}  ·  ${selected.startDate === selected.endDate ? selected.startDate : selected.startDate + " — " + selected.endDate}`);
     if (event.kind === "deadline") add("Due point only · does not reserve time.", theme.muted);

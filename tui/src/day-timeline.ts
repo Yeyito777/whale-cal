@@ -6,6 +6,7 @@ import { eventColor, theme } from "./theme";
 import { pad, truncate, width as textWidth } from "./text";
 
 export interface TimelineCard {
+  kind: "event" | "free";
   eventIndex: number; start: number; end: number; lane: number; lanes: number; group: number; top: number; bottom: number;
 }
 export interface TimelineSpan { start: number; end: number; top: number; height: number; busy: boolean }
@@ -14,22 +15,33 @@ const clock = (minutes: number) => `${String(Math.floor(minutes / 60)).padStart(
 /** Reuse lanes only after a reservation ends. Connected overlap groups share a
  * lane layout, but standalone reservations expand back to the full width. */
 export function timelineLayout(rows: readonly ScheduleRow[]) {
-  const timed = rows.filter(row => row.kind === "event" && row.end > row.start).sort((a, b) => a.start - b.start || b.end - a.end);
+  const timed = rows.filter((row): row is Extract<ScheduleRow, { kind: "event" }> => row.kind === "event" && row.end > row.start);
+  // A completed card remains history. Pair it with the maximal available span,
+  // rather than chopping that span at the completed card's old boundaries.
+  const free: Array<{ start: number; end: number }> = [];
+  for (const row of rows) if (row.kind === "free") {
+    const last = free.at(-1);
+    if (last && last.end === row.start) last.end = row.end;
+    else free.push({ start: row.start, end: row.end });
+  }
+  const available = free.filter(gap => timed.some(item => item.completed && item.start < gap.end && item.end > gap.start));
+  const blocks = [...timed.map(item => ({ kind: "event" as const, eventIndex: item.eventIndex, start: item.start, end: item.end })),
+    ...available.map((gap, index) => ({ kind: "free" as const, eventIndex: -1 - index, ...gap }))]
+    .sort((a, b) => a.start - b.start || (a.kind === b.kind ? 0 : a.kind === "free" ? -1 : 1) || b.end - a.end);
   const markers = rows.filter(row => row.kind === "event" && row.end <= row.start);
   const cards: TimelineCard[] = [];
   let group = -1, groupEnd = -1, laneEnds: number[] = [], members: TimelineCard[] = [];
   const finish = () => { for (const card of members) card.lanes = laneEnds.length; };
-  for (const item of timed) {
-    if (item.kind !== "event") continue;
+  for (const item of blocks) {
     if (item.start >= groupEnd) { finish(); group++; groupEnd = -1; laneEnds = []; members = []; }
     let lane = laneEnds.findIndex(end => end <= item.start);
     if (lane < 0) lane = laneEnds.length;
     laneEnds[lane] = item.end; groupEnd = Math.max(groupEnd, item.end);
-    const card = { eventIndex: item.eventIndex, start: item.start, end: item.end, lane, lanes: 1, group, top: 0, bottom: 0 };
+    const card = { kind: item.kind, eventIndex: item.eventIndex, start: item.start, end: item.end, lane, lanes: 1, group, top: 0, bottom: 0 };
     cards.push(card); members.push(card);
   }
   finish();
-  const ticks = Array.from({ length: 23 }, (_, i) => (i + 1) * 60).filter(minute => cards.some(card => card.start < minute && minute < card.end));
+  const ticks = Array.from({ length: 23 }, (_, i) => (i + 1) * 60).filter(minute => timed.some(card => card.start < minute && minute < card.end));
   const boundaries = [...new Set([0, 1440, ...ticks, ...cards.flatMap(card => [card.start, card.end])])].sort((a, b) => a - b);
   const spans: TimelineSpan[] = [];
   const positions = new Map<number, number>();
@@ -39,7 +51,7 @@ export function timelineLayout(rows: readonly ScheduleRow[]) {
     const busy = cards.some(card => card.start < end && card.end > start);
     // Exact boundaries stay aligned. Expand short busy spans enough to read a
     // card, and compress long empty stretches rather than wasting the screen.
-    const height = busy ? Math.max(3, Math.ceil((end - start) / 30) * 2) : 3;
+    const height = timed.some(item => item.start < end && item.end > start) ? Math.max(3, Math.ceil((end - start) / 30) * 2) : 3;
     positions.set(start, top); spans.push({ start, end, top, height, busy }); top += height;
   }
   positions.set(1440, top);
@@ -49,7 +61,7 @@ export function timelineLayout(rows: readonly ScheduleRow[]) {
 
 export function moveTimelineSelection(rows: readonly ScheduleRow[], selected: number, amount: number): number {
   const layout = timelineLayout(rows);
-  const indices = [...layout.markers.flatMap(row => row.kind === "event" ? [row.eventIndex] : []), ...layout.cards.map(card => card.eventIndex)];
+  const indices = [...layout.markers.flatMap(row => row.kind === "event" ? [row.eventIndex] : []), ...layout.cards.filter(card => card.kind === "event").map(card => card.eventIndex)];
   if (!indices.length) return selected;
   const position = Math.max(0, indices.indexOf(selected));
   return indices[((position + amount) % indices.length + indices.length) % indices.length]!;
@@ -60,7 +72,7 @@ export function renderDayTimeline(state: AppState, occurrences: readonly EventOc
   const layout = timelineLayout(schedule.rows);
   const current = scheduleNow(schedule.rows, state.selectedDate, now);
   const axis = 7, contentWidth = Math.max(1, width - axis);
-  const selected = layout.cards.find(card => card.eventIndex === state.selectedEventIndex);
+  const selected = layout.cards.find(card => card.kind === "event" && card.eventIndex === state.selectedEventIndex);
   const groupSelection = selected?.group;
   const maxLanes = Math.max(1, Math.floor((contentWidth + 1) / 18));
   const windowFor = (card: TimelineCard) => {
@@ -82,6 +94,11 @@ export function renderDayTimeline(state: AppState, occurrences: readonly EventOc
     nowRow = span.top + Math.min(span.height - 1, Math.floor((minute - span.start) / (span.end - span.start) * span.height));
   }
   const screenRow = (row: number) => row + (nowRow >= 0 && row >= nowRow ? 1 : 0);
+  const markerIndex = layout.markers.findIndex(row => row.kind === "event" && row.eventIndex === state.selectedEventIndex);
+  const anchor = selected ? screenRow(selected.top) : markerIndex >= 0 ? markerIndex + 1 : nowRow >= 0 ? nowRow : 0;
+  const maxScroll = Math.max(0, layout.height + (nowRow >= 0 ? 1 : 0) - height);
+  const scroll = Math.max(0, Math.min(state.dayTimelineScroll ?? anchor - Math.min(3, Math.max(0, height - 3)), maxScroll));
+  const contentTop = scroll === nowRow ? scroll + 1 : scroll;
   for (let row = 0; row < layout.height; row++) {
     if (row === nowRow) lines.push(styled(`${current!.time}▶${"─".repeat(Math.max(0, width - 6))}`, width, theme.accent));
     if (layout.markers.length && row === 0) { lines.push(styled(" Due & notes", width, theme.muted)); continue; }
@@ -113,6 +130,21 @@ export function renderDayTimeline(state: AppState, occurrences: readonly EventOc
       const size = Math.floor(usable / window.count) + (slot < usable % window.count ? 1 : 0);
       const card = activeCards.find(card => card.lane === slot + window.first);
       if (!card) line += styled("", size);
+      else if (card.kind === "free") {
+        const inner = Math.max(0, size - 2);
+        if (row === card.top) {
+          const title = truncate(`Free · ${durationLabel(card.end - card.start)}`, inner);
+          line += styled("┌" + title + "─".repeat(Math.max(0, inner - textWidth(title))) + "┐", size, theme.success);
+        } else if (row === card.bottom) line += styled("└" + "─".repeat(inner) + "┘", size, theme.success);
+        else {
+          // Keep a long availability card identifiable when its header is above
+          // the viewport (e.g. selecting the second completed event inside it).
+          const continuation = screenRow(card.top) < scroll;
+          const label = continuation && screenRow(row) === contentTop ? `Free · ${durationLabel(card.end - card.start)}`
+            : row === card.top + 1 || continuation && screenRow(row) === contentTop + 1 ? `${clock(card.start)}–${clock(card.end)}` : "";
+          line += styled("│" + pad(truncate(label, inner), inner) + "│", size, theme.success);
+        }
+      }
       else {
         const occurrence = occurrences[card.eventIndex]!;
         const done = eventIsCompleted(occurrence.event, occurrence.startDate);
@@ -144,9 +176,5 @@ export function renderDayTimeline(state: AppState, occurrences: readonly EventOc
     }
     lines.push(line);
   }
-  const markerIndex = layout.markers.findIndex(row => row.kind === "event" && row.eventIndex === state.selectedEventIndex);
-  const anchor = selected ? screenRow(selected.top) : markerIndex >= 0 ? markerIndex + 1 : nowRow >= 0 ? nowRow : 0;
-  const maxScroll = Math.max(0, lines.length - height);
-  const scroll = Math.max(0, Math.min(state.dayTimelineScroll ?? anchor - Math.min(3, Math.max(0, height - 3)), maxScroll));
   return { rows: lines.slice(scroll, scroll + height), hits: hits.filter(hit => hit.row >= scroll && hit.row < scroll + height).map(hit => ({ ...hit, row: hit.row - scroll })), scroll, maxScroll, laneNote, total: lines.length };
 }
