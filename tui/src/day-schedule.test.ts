@@ -159,6 +159,7 @@ test("day render includes gaps, keeps them non-editable, and ignores hidden cale
     { id: "work", name: "Work", color: "#c792ea", visible: true, createdAt: "", updatedAt: "" },
     { id: "hidden", name: "Hidden", color: "#c792ea", visible: false, createdAt: "", updatedAt: "" },
   ];
+  state.hiddenCalendarIdsBySource.local = ["hidden"];
   state.database.events = [event("Tutorial", "10:00", "11:00"), event("Seminar", "13:00", "14:00"), event("Hidden", "00:00", "23:59", { calendarId: "hidden" })];
   expect(daySchedule(eventsOnSelectedDate(state), date).freeMinutes).toBe(22 * 60);
   const frame = buildFrame(state);

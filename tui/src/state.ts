@@ -56,6 +56,7 @@ export interface AppState {
   selectedCalendarIndex: number;
   selectedGroupId: string | null;
   collapsedGroupIds: string[];
+  hiddenCalendarIdsBySource: Record<string, string[]>;
   view: CalendarView;
   focus: Focus;
   mainFocus: "calendar" | "prompt";
@@ -82,7 +83,7 @@ export function emptyDatabase(): CalendarDatabase {
 
 export function createState(): AppState {
   return {
-    database: emptyDatabase(), selectedDate: todayKey(), selectedEventIndex: 0, selectedCalendarIndex: 0, selectedGroupId: null, collapsedGroupIds: [],
+    database: emptyDatabase(), selectedDate: todayKey(), selectedEventIndex: 0, selectedCalendarIndex: 0, selectedGroupId: null, collapsedGroupIds: [], hiddenCalendarIdsBySource: {},
     view: "month", focus: "calendar", mainFocus: "calendar", sidebarOpen: false, prompt: null, editor: null, confirmDelete: null,
     dayOpen: false, detailScroll: 0, dayTimelineScroll: null, helpOpen: false, notice: { text: "Connecting to cald…", kind: "info", at: Date.now() }, remoteAlias: null,
     connected: false, cols: process.stdout.columns || 100, rows: process.stdout.rows || 30, pendingKeys: "",
@@ -90,8 +91,31 @@ export function createState(): AppState {
   };
 }
 
+export function calendarFilterSource(state: AppState): string {
+  return state.remoteAlias === null ? "local" : `ssh:${state.remoteAlias}`;
+}
+
+/** Visibility belongs to this UI, never to the canonical calendar record. */
+export function calendarIsVisible(state: AppState, id: string): boolean {
+  return !state.hiddenCalendarIdsBySource[calendarFilterSource(state)]?.includes(id);
+}
+
+export function toggleCalendarVisibility(state: AppState, id: string): boolean {
+  const selected = selectedOccurrence(state);
+  const source = calendarFilterSource(state);
+  const hidden = state.hiddenCalendarIdsBySource[source] ?? [];
+  const show = hidden.includes(id);
+  state.hiddenCalendarIdsBySource[source] = show ? hidden.filter(value => value !== id) : [...hidden, id];
+  const occurrences = eventsOnSelectedDate(state);
+  const index = selected ? occurrences.findIndex(item => item.event.id === selected.event.id && item.startDate === selected.startDate) : -1;
+  state.selectedEventIndex = index >= 0 ? index : Math.max(0, Math.min(state.selectedEventIndex, occurrences.length - 1));
+  state.dayTimelineScroll = null;
+  state.detailScroll = 0;
+  return show;
+}
+
 export function visibleEvents(state: AppState): CalendarEvent[] {
-  const visible = new Set(state.database.calendars.filter(calendar => calendar.visible).map(calendar => calendar.id));
+  const visible = new Set(state.database.calendars.filter(calendar => calendarIsVisible(state, calendar.id)).map(calendar => calendar.id));
   return state.database.events.filter(event => visible.has(event.calendarId));
 }
 

@@ -83,7 +83,8 @@ test("overview views stay uncluttered; hidden calendars do not create timeline o
   }
   // Hiding the other calendar must remove both the marker and shared-time details.
   s.database.events = [events[0]!, { ...events[1]!, calendarId: "hidden" }];
-  s.database.calendars.push({ ...s.database.calendars[0]!, id: "hidden", visible: false });
+  s.database.calendars.push({ ...s.database.calendars[0]!, id: "hidden", visible: true });
+  s.hiddenCalendarIdsBySource.local = ["hidden"];
   s.dayOpen = true;
   expect(eventsOnSelectedDate(s)).toHaveLength(1);
   expect(buildFrame(s).rows.map(stripAnsi).join("\n")).not.toContain("Overlaps with");

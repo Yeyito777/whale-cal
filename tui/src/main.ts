@@ -15,7 +15,7 @@ import { loadPreferences, savePreferences } from "./preferences";
 import { render } from "./render";
 import {
   createEditor, createState, editorDraft, editorItemKind, setEditorItemKind, eventsOnSelectedDate,
-  moveDate, selectDate, selectedCalendar, selectedOccurrence, setNotice, settleEditorSave, syncEditorDates, type AppState, type EditorState,
+  moveDate, selectDate, selectedCalendar, selectedOccurrence, setNotice, settleEditorSave, syncEditorDates, toggleCalendarVisibility, visibleEvents, type AppState, type EditorState,
 } from "./state";
 import {
   cursorBar, disableKittyKeyboard, disableMouse, disablePaste, enableKittyKeyboard, enableMouse, enablePaste,
@@ -237,6 +237,13 @@ function saveEditor(editor: EditorState): void {
   }
 }
 
+function toggleCalendar(id: string, name: string): void {
+  const shown = toggleCalendarVisibility(state, id);
+  try { savePreferences(state); }
+  catch { notice("Filter changed locally, but could not save preferences.", "warning"); return; }
+  notice(`${shown ? "Showed" : "Hid"} “${name}” in this client.`, "success");
+}
+
 function cycleView(): void {
   const views: CalendarView[] = ["month", "week", "agenda"];
   state.view = views[(views.indexOf(state.view) + 1) % views.length]!;
@@ -266,8 +273,7 @@ function execute(action: CommandAction): void {
     case "calendar_toggle": {
       const calendar = state.database.calendars.find(item => item.name.toLowerCase() === action.name.toLowerCase());
       if (!calendar) { notice(`Calendar not found: ${action.name}`, "error"); return; }
-      const reqId = client.updateCalendar(calendar.id, { visible: !calendar.visible });
-      track(reqId, `${calendar.visible ? "Hid" : "Showed"} “${calendar.name}”.`);
+      toggleCalendar(calendar.id, calendar.name);
       return;
     }
     case "group_new": track(client.createGroup(action.name), `Created group “${action.name}”.`); return;
@@ -276,7 +282,7 @@ function execute(action: CommandAction): void {
     case "calendar_group": track(client.updateCalendar(action.id, { groupId: action.groupId }), action.groupId ? "Calendar moved into group." : "Calendar ungrouped."); return;
     case "search": {
       const query = action.query.toLowerCase();
-      const match = state.database.events.find(event => `${event.title} ${event.location ?? ""} ${event.notes ?? ""}`.toLowerCase().includes(query));
+      const match = visibleEvents(state).find(event => `${event.title} ${event.location ?? ""} ${event.notes ?? ""}`.toLowerCase().includes(query));
       if (!match) { notice(`No event matches “${action.query}”.`, "warning"); return; }
       selectDate(state, match.startDate);
       state.view = "agenda";
@@ -447,7 +453,7 @@ function handleNormalKey(key: KeyEvent): void {
     else if (char === "k") moveSidebarSelection(state, -1);
     else if (char === "enter" || char === " ") {
       const calendar = selectedCalendar(state);
-      if (calendar) track(client.updateCalendar(calendar.id, { visible: !calendar.visible }), `${calendar.visible ? "Hid" : "Showed"} “${calendar.name}”.`);
+      if (calendar) toggleCalendar(calendar.id, calendar.name);
     } else if (char === "l") focusCalendar(state);
     else if (char === "i" || char === "a") focusPrompt(state);
     else if (char === "/" || char === ":") focusPrompt(state, "/");
@@ -596,7 +602,7 @@ function handleMouse(event: MouseEvent): void {
         focusSidebar(state);
         if (event.col <= (state.database.calendars[index]!.groupId ? 5 : 3)) {
           const calendar = state.database.calendars[index]!;
-          track(client.updateCalendar(calendar.id, { visible: !calendar.visible }), `${calendar.visible ? "Hid" : "Showed"} “${calendar.name}”.`);
+          toggleCalendar(calendar.id, calendar.name);
         }
       }
       scheduleRender(); return;

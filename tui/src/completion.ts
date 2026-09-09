@@ -1,7 +1,7 @@
 import { addDays, todayKey } from "@whale-cal/shared/dates";
 import { COMMANDS } from "./commands";
 import { loadSshAliases } from "./ssh-aliases";
-import type { AppState, PromptState } from "./state";
+import { calendarIsVisible, visibleEvents, type AppState, type PromptState } from "./state";
 
 export interface CompletionItem { label: string; description: string; value: string; cursor: number }
 export interface CompletionState { items: CompletionItem[]; selection: number }
@@ -25,14 +25,14 @@ export function commandCompletions(text: string, cursor: number, state: AppState
       ["/group rename ", () => (state.database.groups ?? []).map(g => [g.name + " -> ", "Rename group"] as const)],
       ["/group delete ", () => (state.database.groups ?? []).map(g => [g.name, "Remove group; preserve calendars"] as const)],
       ["/group ", () => [["new", "Create group"], ["move", "Move calendar into group"], ["ungroup", "Remove calendar from group"], ["rename", "Rename group"], ["delete", "Remove group; preserve calendars"]]],
-      ["/calendar toggle ", () => state.database.calendars.map(c => [c.name, c.visible ? "Visible calendar" : "Hidden calendar"] as const)],
+      ["/calendar toggle ", () => state.database.calendars.map(c => [c.name, calendarIsVisible(state, c.id) ? "Visible calendar" : "Hidden calendar"] as const)],
       ["/calendar ", () => [["new", "Create a calendar"], ["toggle", "Show or hide a calendar"]]],
       ["/view ", () => [["month", "Month grid"], ["week", "Week overview"], ["agenda", "Upcoming events"]]],
       ["/ssh ", () => [...aliases().map(alias => [alias, "SSH calendar daemon"] as const), ["cancel", "Return to local calendar"]]],
       ["/goto ", () => [...new Set([state.selectedDate, todayKey(), addDays(todayKey(), 1)])].map(date => [date, "Jump to date"] as const)],
       ["/new ", () => [["today", "New event today"], ["tomorrow", "New event tomorrow"], ...["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map(day => [day, "New event on this weekday"] as const)]],
       ["/deadline ", () => [["today", "Due today"], ["tomorrow", "Due tomorrow"], ...["mon", "tue", "wed", "thu", "fri", "sat", "sun"].map(day => [day, "Due on this weekday"] as const)]],
-      ["/search ", () => [...new Set(state.database.events.map(e => e.title))].map(title => [title, "Find event"] as const)],
+      ["/search ", () => [...new Set(visibleEvents(state).map(e => e.title))].map(title => [title, "Find event"] as const)],
     ];
     const provider = providers.find(([prefix]) => before.toLowerCase().startsWith(prefix));
     if (!provider) return [];

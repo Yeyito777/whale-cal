@@ -75,7 +75,13 @@ current GUI launchd domain when available and starts automatically at login.
 | `Ctrl+C` or `/quit` | quit the TUI (daemon stays alive) |
 
 The calendar starts full-width with the optional sidebar closed. `Ctrl+S` opens
-the calendar filters, and that preference is remembered. The toolbar provides
+the calendar filters, and that preference is remembered. Showing/hiding a calendar
+with the sidebar or `/calendar toggle NAME` is entirely local: no daemon command,
+shared calendar mutation, or broadcast is sent. Filters are saved in this client's
+`config.json`, separately for the local daemon and each SSH alias, and survive
+reloads/reconnects. Other running clients are unaffected. All views, day availability,
+search, and next-item status blocks use these local filters. The legacy daemon/CLI
+`visible` field (`--show`/`--hide`) no longer controls TUI filtering. The toolbar provides
 clickable date navigation, view switching, and event creation without shortcut
 labels. The month grid uses only the weeks belonging to that month, with visible
 week boundaries and overflow counts for busy days.
@@ -95,7 +101,7 @@ Named, one-level groups organize the sidebar without changing calendar visibilit
 or event ownership. Groups can be empty; ungrouped calendars remain below them.
 Use `j`/`k` to navigate headers and calendars. `Enter`/Space on a group folds or
 unfolds it; `h`/`l` collapses/expands it. Clicking its header also folds it.
-On a calendar, `Enter`/Space still toggles visibility. Folding is a local UI
+On a calendar, `Enter`/Space toggles local visibility. Folding is also a local UI
 preference saved across restarts, not a way to hide the group's events.
 
 Create and organize groups from the prompt (names can contain spaces):

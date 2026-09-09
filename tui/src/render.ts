@@ -14,7 +14,7 @@ import { completionMenu } from "./completion-menu";
 import { renderStatusline, STATUSLINE_HEIGHT } from "./statusline";
 import { cursorAt, flushFrame, overlayAt } from "./frame";
 import {
-  editorItemKind, eventsOnSelectedDate, selectedCalendar, selectedOccurrence, type AppState, type EditorState, type Notice, visibleEvents,
+  calendarIsVisible, editorItemKind, eventsOnSelectedDate, selectedCalendar, selectedOccurrence, type AppState, type EditorState, type Notice, visibleEvents,
 } from "./state";
 import { eventColor, theme } from "./theme";
 import { cursorBar, cursorBlock } from "./terminal";
@@ -87,7 +87,7 @@ function renderSidebar(state: AppState, height: number, target: number): string[
     if (row < height) rows[row] = segment(content, inner, active ? theme.sidebarSelBg : theme.sidebarBg) + `${theme.appBg}${border}│${theme.reset}`;
   };
   put(0, `${theme.text}${theme.bold} Calendars${theme.boldOff}`);
-  put(1, `${theme.muted} ${state.database.calendars.filter(calendar => calendar.visible).length} visible`);
+  put(1, `${theme.muted} ${state.database.calendars.filter(calendar => calendarIsVisible(state, calendar.id)).length} visible`);
   const capacity = Math.max(1, height - 3);
   const items = calendarSidebarRows(state), selection = selectedSidebarIndex(state, items);
   const start = Math.max(0, Math.min(selection - Math.floor(capacity / 2), items.length - capacity));
@@ -100,7 +100,7 @@ function renderSidebar(state: AppState, height: number, target: number): string[
     } else {
       const calendar = item.calendar;
       const indent = item.nested ? "  " : "";
-      put(3 + i - start, `${indent}${selected ? theme.accent + "▸" : " "} ${calendar.visible ? eventColor(calendar.color) + "●" : theme.muted + "○"} ${calendar.visible ? theme.text : theme.muted}${truncate(calendar.name, inner - 5 - indent.length)}`, selected);
+      put(3 + i - start, `${indent}${selected ? theme.accent + "▸" : " "} ${calendarIsVisible(state, calendar.id) ? eventColor(calendar.color) + "●" : theme.muted + "○"} ${calendarIsVisible(state, calendar.id) ? theme.text : theme.muted}${truncate(calendar.name, inner - 5 - indent.length)}`, selected);
       state.layout.calendarRows.push({ calendarId: calendar.id, row: state.layout.bodyTop + 3 + i - start });
     }
   }
@@ -190,7 +190,7 @@ function renderWeek(state: AppState, widthValue: number, height: number, absolut
     left += widths[i]! + 1;
   }
   const perDay = dates.map(key => occurrencesForRange(
-    state.database.events.filter(event => calendarFor(state, event.calendarId)?.visible), key, key,
+    visibleEvents(state), key, key,
   ));
   for (let row = 2; row < height; row++) {
     rows[row] = dates.map((key, i) => {
@@ -207,7 +207,7 @@ function renderAgenda(state: AppState, widthValue: number, height: number): stri
   rows[0] = segment(`${theme.bold} Agenda${theme.boldOff}  ${theme.muted}from ${formatLongDate(state.selectedDate)}`, widthValue);
   const end = addDays(state.selectedDate, Math.max(30, height));
   const occurrences = occurrencesForRange(
-    state.database.events.filter(event => calendarFor(state, event.calendarId)?.visible), state.selectedDate, end,
+    visibleEvents(state), state.selectedDate, end,
   );
   let row = 1, currentDate = "";
   for (const occurrence of occurrences) {

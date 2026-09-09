@@ -47,7 +47,7 @@ test("status blocks fit narrow terminals and honor hidden calendars", () => {
   expect(stripAnsi(lines[1])).toStartWith(" Happens in: 0d1h30m");
   expect(lines.every(line => stripAnsi(line).includes("│"))).toBe(true);
   expect(stripAnsi(lines[0])).toContain("Next Deadline: none");
-  state.database.calendars[0]!.visible = false;
+  state.hiddenCalendarIdsBySource.local = ["cal"];
   expect(stripAnsi(renderStatusline(state, now)[0])).toContain("Next Event: none");
   expect(stripAnsi(renderStatusline(state, now)[1])).toContain("Happens in: —");
   state.connected = false;
@@ -80,7 +80,7 @@ test("event and deadline blocks independently select upcoming incomplete occurre
   expect(lines[0]!.trimEnd()).toBe(" Next Event: Design review │ Next Deadline: Submit quiz");
   state.cols = 160;
   expect(stripAnsi(renderStatusline(state, now)[0]).trimEnd()).toBe(lines[0]!.trimEnd());
-  state.database.calendars[0]!.visible = false;
+  state.hiddenCalendarIdsBySource.local = ["cal"];
   lines = renderStatusline(state, now).map(stripAnsi);
   expect(lines[0]).toContain("Next Deadline: none");
   expect(lines[1]).toContain("Due in: —");
