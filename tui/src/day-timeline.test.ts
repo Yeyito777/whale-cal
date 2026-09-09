@@ -5,6 +5,7 @@ import { daySchedule } from "./day-schedule";
 import { moveTimelineSelection, renderDayTimeline, timelineLayout } from "./day-timeline";
 import { createState, selectDate } from "./state";
 import { stripAnsi, width } from "./text";
+import { eventColor, theme } from "./theme";
 
 const date = "2026-09-14";
 const event = (id: string, startTime?: string, endTime?: string, extra: Partial<CalendarEvent> = {}): CalendarEvent => ({ id, title: id, calendarId: "work", startDate: date, endDate: date, startTime, endTime, createdAt: "", updatedAt: "", ...extra });
@@ -49,6 +50,24 @@ test("rendered concurrent cards have distinct clickable columns on shared rows",
   expect(shared!.right).toBeLessThan(right.find(b => b.row === shared!.row)!.left);
   expect(rendered.rows.map(stripAnsi).join("\n")).toContain("Free 12:00–24:00");
   expect(rendered.rows.map(stripAnsi).join("\n")).not.toContain("∥");
+});
+
+test("selection changes the background, not the card's outline or title color", () => {
+  for (const completed of [false, true]) {
+    const events = [event("Lecture", "10:00", "11:00", { completed })];
+    const s = fixture(events);
+    s.database.calendars[0]!.color = "#8b5cf6";
+    const border = completed ? theme.muted : eventColor("#8b5cf6");
+    for (const selected of [false, true]) {
+      s.selectedEventIndex = selected ? 0 : -1;
+      const rendered = renderDayTimeline(s, occurrencesOnDate(events, date), 80, 30, new Date("2026-09-13T12:00:00"));
+      const bg = selected ? theme.sidebarSelBg : theme.appBg;
+      expect(rendered.rows.some(row => row.includes(bg + border + "┌"))).toBe(true);
+      expect(rendered.rows.some(row => row.includes(bg + border + "│"))).toBe(true);
+      expect(rendered.rows.some(row => row.includes(bg + border + "└"))).toBe(true);
+      expect(rendered.rows.join("\n")).not.toContain(theme.accent + theme.bold + "┌");
+    }
+  }
 });
 
 test("keyboard selection follows the marker section before timed cards", () => {

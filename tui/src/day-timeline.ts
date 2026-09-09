@@ -118,7 +118,7 @@ export function renderDayTimeline(state: AppState, occurrences: readonly EventOc
         const done = eventIsCompleted(occurrence.event, occurrence.startDate);
         const active = card.eventIndex === state.selectedEventIndex;
         const currentCard = current?.rows.some(item => item.kind === "event" && item.eventIndex === card.eventIndex);
-        const border = active ? theme.accent + theme.bold : done ? theme.muted : color(card.eventIndex);
+        const border = done ? theme.muted : color(card.eventIndex);
         const bg = active ? theme.sidebarSelBg : theme.appBg;
         const inner = Math.max(0, size - 2);
         let text: string;
