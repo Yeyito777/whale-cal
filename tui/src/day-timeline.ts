@@ -98,7 +98,16 @@ export function renderDayTimeline(state: AppState, occurrences: readonly EventOc
   const anchor = selected ? screenRow(selected.top) : markerIndex >= 0 ? markerIndex + 1 : nowRow >= 0 ? nowRow : 0;
   const maxScroll = Math.max(0, layout.height + (nowRow >= 0 ? 1 : 0) - height);
   const scroll = Math.max(0, Math.min(state.dayTimelineScroll ?? anchor - Math.min(3, Math.max(0, height - 3)), maxScroll));
-  const contentTop = scroll === nowRow ? scroll + 1 : scroll;
+  const contentTop = scroll - (nowRow >= 0 && scroll > nowRow ? 1 : 0);
+  // Availability is always unboxed text, even beside completed history. Wrap
+  // only the duration in narrow lanes; keep the exact time range readable.
+  const freeText = (start: number, end: number, top: number, row: number, size: number) => {
+    const range = ` Free ${clock(start)}–${clock(end)}`;
+    const duration = durationLabel(end - start);
+    const full = `${range} · ${duration}`;
+    const labels = textWidth(full) <= size ? [full] : [range, ` ${duration} free`];
+    return styled(labels[row - Math.max(top + 1, contentTop)] ?? "", size, theme.success);
+  };
   for (let row = 0; row < layout.height; row++) {
     if (row === nowRow) lines.push(styled(`${current!.time}▶${"─".repeat(Math.max(0, width - 6))}`, width, theme.accent));
     if (layout.markers.length && row === 0) { lines.push(styled(" Due & notes", width, theme.muted)); continue; }
@@ -118,8 +127,7 @@ export function renderDayTimeline(state: AppState, occurrences: readonly EventOc
     const label = row === span.top ? clock(span.start) : "";
     const axisText = styled(pad(label, 5) + " │", axis, theme.muted);
     if (!span.busy) {
-      const free = row === span.top + 1 ? ` Free ${clock(span.start)}–${clock(span.end)} · ${durationLabel(span.end - span.start)}` : "";
-      lines.push(axisText + styled(free, contentWidth, theme.success)); continue;
+      lines.push(axisText + freeText(span.start, span.end, span.top, row, contentWidth)); continue;
     }
     const activeCards = layout.cards.filter(card => card.top <= row && row <= card.bottom);
     const sample = activeCards[0]!;
@@ -131,19 +139,7 @@ export function renderDayTimeline(state: AppState, occurrences: readonly EventOc
       const card = activeCards.find(card => card.lane === slot + window.first);
       if (!card) line += styled("", size);
       else if (card.kind === "free") {
-        const inner = Math.max(0, size - 2);
-        if (row === card.top) {
-          const title = truncate(`Free · ${durationLabel(card.end - card.start)}`, inner);
-          line += styled("┌" + title + "─".repeat(Math.max(0, inner - textWidth(title))) + "┐", size, theme.success);
-        } else if (row === card.bottom) line += styled("└" + "─".repeat(inner) + "┘", size, theme.success);
-        else {
-          // Keep a long availability card identifiable when its header is above
-          // the viewport (e.g. selecting the second completed event inside it).
-          const continuation = screenRow(card.top) < scroll;
-          const label = continuation && screenRow(row) === contentTop ? `Free · ${durationLabel(card.end - card.start)}`
-            : row === card.top + 1 || continuation && screenRow(row) === contentTop + 1 ? `${clock(card.start)}–${clock(card.end)}` : "";
-          line += styled("│" + pad(truncate(label, inner), inner) + "│", size, theme.success);
-        }
+        line += freeText(card.start, card.end, card.top, row, size);
       }
       else {
         const occurrence = occurrences[card.eventIndex]!;

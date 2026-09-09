@@ -51,14 +51,23 @@ test("completion frees only its recurring occurrence, including an overnight con
   expect(scheduleNow(schedule([recurring]).rows, date, at)?.rows.map(row => row.kind)).toEqual(["free"]);
 });
 
-test("free cards share rows with completed history but are never selectable or clickable", () => {
+test("unboxed free lanes share rows with completed history but are never selectable or clickable", () => {
   const s = createState(); s.selectedDate = date; s.selectedEventIndex = 1;
   s.database.calendars = [{ id: "work", name: "Work", color: "#8b5cf6", visible: true, createdAt: "", updatedAt: "" }];
   const events = fixture(); s.database.events = events;
   for (const columns of [50, 80, 120]) {
     const result = renderDayTimeline(s, occurrencesOnDate(events, date), columns, 30, new Date("2026-09-08T12:00:00"));
     const text = result.rows.map(stripAnsi).join("\n");
-    expect(text).toContain("Free · 4h"); expect(text).toContain("11:00–15:00"); expect(text).toContain("✓ Quiz");
+    expect(text).toContain("Free 11:00–15:00"); expect(text).toContain("4h"); expect(text).toContain("✓ Quiz");
+    // Inspect the availability lane geometrically: basic terminals can map
+    // success and muted to the same ANSI color, so color alone isn't enough.
+    const gap = timelineLayout(schedule(events).rows).cards.find(card => card.kind === "free")!;
+    const laneWidth = Math.ceil((columns - 8) / 2);
+    const freeSegments = result.rows.filter((_, row) => row + result.scroll >= gap.top && row + result.scroll <= gap.bottom)
+      .map(row => stripAnsi(row).slice(7, 7 + laneWidth));
+    expect(freeSegments.length).toBeGreaterThan(0);
+    expect(freeSegments.every(part => !/[┌┐└┘│─]/u.test(part))).toBe(true);
+    expect(text).toContain(columns === 50 ? "4h free" : "Free 11:00–15:00 · 4h");
     expect(result.rows.join("\n")).toContain(theme.strike);
     expect(result.hits.every(hit => hit.index >= 0)).toBe(true);
     const doneHits = result.hits.filter(hit => hit.index === 1);
@@ -75,9 +84,30 @@ test("a long merged availability remains labeled when scrolling to later complet
   const result = renderDayTimeline(s, occurrencesOnDate(events, date), 80, 6, new Date("2026-09-08T12:00:00"));
   const text = result.rows.map(stripAnsi).join("\n");
   expect(result.scroll).toBeGreaterThan(0);
-  expect(text).toContain("Free · 24h"); expect(text).toContain("00:00–24:00");
+  expect(text).toContain("Free 00:00–24:00 · 24h");
   expect(text).toContain("✓ Late");
   expect(result.hits.some(hit => hit.index === 1)).toBe(true);
+});
+
+test("ordinary gaps and availability beside history use the same label, including across the now line", () => {
+  const s = createState(); s.selectedDate = date; s.dayTimelineScroll = 0;
+  for (const events of [fixture().filter(e => !e.completed), fixture()]) {
+    const result = renderDayTimeline(s, occurrencesOnDate(events, date), 80, 100, new Date(`${date}T11:30:00`));
+    expect(result.rows.map(stripAnsi).join("\n")).toContain(" Free 11:00–15:00 · 4h");
+  }
+  const events = [event("Done", "12:15", "13:00", { completed: true })];
+  const layout = timelineLayout(schedule(events).rows);
+  const span = layout.spans.find(span => span.start === 735)!;
+  // Scroll onto the live line itself: the two-line label must survive its
+  // insertion without losing the duration or covering the history card.
+  s.dayTimelineScroll = span.top;
+  const result = renderDayTimeline(s, occurrencesOnDate(events, date), 50, 6, new Date(`${date}T12:15:00`));
+  const text = result.rows.map(stripAnsi).join("\n");
+  expect(text).toContain("12:15▶");
+  expect(text).toContain("Free 00:00–24:00");
+  expect(text).toContain("24h free");
+  expect(text).toContain("✓ Done");
+  expect(result.rows.every(row => width(row) === 50)).toBe(true);
 });
 
 test("availability is exactly the complement of unfinished reservations in mixed schedules", () => {

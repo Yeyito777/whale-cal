@@ -171,8 +171,10 @@ Selecting a card shows **Overlaps with** in its details: other event/calendar
 names and the exact shared intervals. Only direct intersections are listed,
 not transitive chains. Intentional overlaps are not errors. Completed cards
 retain their original time range, checkmark, and strikethrough as history, but
-no longer reserve time. Free time merges around them and appears as a green
-card alongside completed history. Those free cards are informational, never
+no longer reserve time. Free time merges around them and appears as unboxed
+green text alongside completed history, matching ordinary gaps rather than
+looking like another event. Its full time range stays labeled when scrolling;
+narrow lanes wrap the duration onto a second line. Free lanes are informational, never
 keyboard selections or editable items. Incomplete overlapping events still
 reserve their time. Free time uses the union of unfinished reservations, not
 their sum. Overview views keep their simple event
