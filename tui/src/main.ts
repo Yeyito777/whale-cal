@@ -3,7 +3,8 @@ import type { CalendarEvent, CalendarItemKind, CalendarView, EventDraft, EventPa
 import { DaemonClient, type ClientEvent } from "./client";
 import { runCommand, type CommandAction } from "./commands";
 import { PromptController } from "./prompt";
-import { daySchedule, moveScheduleSelection } from "./day-schedule";
+import { daySchedule } from "./day-schedule";
+import { moveTimelineSelection } from "./day-timeline";
 import { focusCalendar, focusPrompt, focusSidebar, handleFocusKey, isPromptFocused } from "./focus";
 import { STATUSLINE_HEIGHT } from "./statusline";
 import { cycleCompletion } from "./completion";
@@ -366,9 +367,10 @@ function moveSelectedEvent(amount: number): void {
   const events = eventsOnSelectedDate(state);
   if (!events.length) return;
   state.selectedEventIndex = state.dayOpen
-    ? moveScheduleSelection(daySchedule(events, state.selectedDate).rows, state.selectedEventIndex, amount)
+    ? moveTimelineSelection(daySchedule(events, state.selectedDate).rows, state.selectedEventIndex, amount)
     : (state.selectedEventIndex + amount + events.length) % events.length;
   state.detailScroll = 0;
+  state.dayTimelineScroll = null;
 }
 
 function handleDayKey(key: KeyEvent): void {
@@ -607,7 +609,10 @@ function handleMouse(event: MouseEvent): void {
   if (state.dayOpen) {
     if (event.button === 64 || event.button === 65) {
       const list = state.layout.dayList;
-      if (list && event.col >= list.left && event.col <= list.right && event.row >= list.top && event.row <= list.bottom) moveSelectedEvent(event.button === 64 ? -1 : 1);
+      if (list && event.col >= list.left && event.col <= list.right && event.row >= list.top && event.row <= list.bottom) {
+        const timeline = state.layout.dayTimeline;
+        if (timeline) state.dayTimelineScroll = Math.max(0, Math.min(timeline.maxScroll, timeline.scroll + (event.button === 64 ? -3 : 3)));
+      }
       else state.detailScroll = Math.max(0, state.detailScroll + (event.button === 64 ? -3 : 3));
     } else if (event.action === "press" && event.button === 0) {
       const hit = state.layout.eventRows.find(hit => hit.row === event.row && event.col >= hit.left && event.col <= hit.right);

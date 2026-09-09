@@ -91,12 +91,14 @@ are preserved. Omit `--color` for automatic assignment, including via the CLI.
 
 Pressing `Enter` on the calendar opens a detailed day panel. Within that panel,
 `j`/`k` selects an event, `h`/`l` moves between days, and `Enter` or `e` edits
-that selected event. `Esc` returns to the calendar. A day uses a split event list
+that selected event. `Esc` returns to the calendar. A day uses a split timeline
 and details layout on wide terminals, stacking them on narrower terminals.
-Click an event to inspect it. Notes retain paragraphs and wrap to the available
+Click anywhere inside a card to inspect it. The mouse wheel over the timeline
+scrolls time without changing selection; `j`/`k` brings the selected card back
+into view. Notes retain paragraphs and wrap to the available
 width; scroll the details with the mouse wheel or `Ctrl+D`/`Ctrl+U`. Clicking an
 already selected month cell opens that day; agenda entries are clickable too.
-The day list also shows free-time gaps from 00:00 through 24:00, their durations,
+The day timeline shows free-time gaps from 00:00 through 24:00, their durations,
 and the day's total free time. Overlapping events count as one busy interval;
 only visible calendars are considered. Gap rows are informational: navigation
 and editing still target real events. All-day entries remain visible as date
@@ -108,22 +110,26 @@ notes when these entries are excluded from the free-time total; add an end time
 to reserve a duration. Overnight events with known end times are clipped to
 the inspected day's boundaries.
 
-Today's day view shows a live `Now HH:MM` summary and blue `Now` markers on the
-current event(s) or free-time block. It uses the same local wall-clock time as
-the calendar, updates automatically, and leaves your selection and scroll position
-alone. Overlapping events are all marked; deadlines and durationless markers
-are not treated as ongoing blocks. Other dates do not show a Now marker.
+Timed events are bordered, calendar-colored cards on a shared vertical time axis.
+Concurrent events occupy parallel columns; back-to-back events reuse a column.
+Exact start/end boundaries align across columns, with hourly ticks during busy
+stretches. Long free gaps are compressed and very short intervals expanded for
+readability, so the axis is not uniformly to scale. Every card retains its exact
+time range. Deadlines, all-day notes, and missing-end markers appear in **Due &
+notes** above the axis, not as reservations. If concurrent columns cannot all fit,
+the selected card's columns are shown with a lane-range indicator; `j`/`k` can
+still reach every item. Selection highlights the card, independent of current time.
 
-Concurrent timed reservations use a `∥` marker in month, week, agenda, and day
-views, retaining their calendar colors. The day view counts events with overlaps;
-select one to see **Concurrent with**, the other event and calendar names, and
-the exact shared interval and duration. Only direct intersections are listed:
-back-to-back events are not concurrent, and a chain of overlaps does not imply
-every event overlaps every other one. Intentional overlaps are not treated as
-errors. Hidden calendars, deadlines, all-day notes, and missing-end markers do
-not contribute overlaps. Completed reservations still retain their time, with
-the checkmark and strikethrough preserved. Free time continues to use the union
-of occupied intervals, not the sum of overlapping durations.
+Today's view has a live `Now HH:MM` summary and a blue time line across the
+timeline. It uses the calendar's local wall-clock time, updates automatically,
+and does not jump the viewport to chase the clock. Other dates have no Now line.
+
+Selecting a card shows **Overlaps with** in its details: other event/calendar
+names and the exact shared intervals. Only direct intersections are listed,
+not transitive chains. Intentional overlaps are not errors. Completed cards
+retain their reserved time, checkmark, and strikethrough. Free time uses the union
+of occupied intervals, not their sum. Overview views keep their simple event
+lists without overlap symbols; open the day to inspect simultaneous blocks.
 
 The event form uses `Tab`/`Shift+Tab` (or `j`/`k` in normal mode) to move between
 fields, `i`/`a` to enter insert mode, `Esc` to return to normal mode, and

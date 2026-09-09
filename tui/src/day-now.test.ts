@@ -48,17 +48,19 @@ test("live day rendering keeps selection independent and updates from busy to fr
   const s = fixture();
   let frame = buildFrame(s);
   let plain = frame.rows.map(stripAnsi).join("\n");
-  expect(plain).toContain("Now 10:35 · Lecture + Call");
-  expect(plain).toContain("Now ∥ Lecture");
-  expect(plain).toContain("Now ∥ Call");
-  const selectedRow = frame.rows.find(row => stripAnsi(row).includes("▸ 12:15–13:00"))!;
+  expect(plain).toContain("Now 10:35");
+  // Keyboard selection follows Lunch; the Now summary remains visible even
+  // when the live line is above the scrolled viewport.
+  const selectedRow = frame.rows.find(row => stripAnsi(row).includes("▸ Lunch"))!;
   expect(selectedRow).toContain(theme.sidebarSelBg);
   expect(s.selectedEventIndex).toBe(2);
   setSystemTime(at("11:00"));
   plain = buildFrame(s).rows.map(stripAnsi).join("\n");
-  expect(plain).toContain("Now 11:00 · Free time");
-  expect(plain).toContain("Now ○ Free");
-  expect(plain).not.toContain("Now ∥ Lecture");
+  expect(plain).toContain("Now 11:00");
+  s.dayTimelineScroll = 0;
+  plain = buildFrame(s).rows.map(stripAnsi).join("\n");
+  expect(plain).toContain("11:00▶");
+  expect(plain).toContain("Free 11:00–12:15");
   s.selectedDate = "2026-09-08";
   expect(buildFrame(s).rows.map(stripAnsi).join("\n")).not.toContain("Now");
 });
@@ -83,5 +85,8 @@ test("Now fits compact layouts and leaves missing-end warnings visible", () => {
     expect(plain).toContain("1 missing end time");
   }
   const empty = fixture(); empty.database.events = [];
-  expect(buildFrame(empty).rows.map(stripAnsi).join("\n")).toContain("Now 10:35 · Free time");
+  const emptyText = buildFrame(empty).rows.map(stripAnsi).join("\n");
+  expect(emptyText).toContain("Now 10:35");
+  expect(emptyText).toContain("10:35▶");
+  expect(emptyText).toContain("Free 00:00–24:00");
 });

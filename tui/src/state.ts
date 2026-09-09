@@ -37,6 +37,7 @@ export interface CalendarCellHit { date: DateKey; left: number; right: number; t
 export interface ActionHit { action: string; left: number; right: number; row: number }
 export interface LayoutState {
   dayList?: { left: number; right: number; top: number; bottom: number };
+  dayTimeline?: { scroll: number; maxScroll: number };
   sidebarWidth: number;
   calendarRows: Array<{ calendarId: string; row: number }>;
   monthCells: CalendarCellHit[];
@@ -62,6 +63,7 @@ export interface AppState {
   confirmDelete: CalendarEvent | null;
   dayOpen: boolean;
   detailScroll: number;
+  dayTimelineScroll: number | null;
   helpOpen: boolean;
   notice: Notice | null;
   remoteAlias: string | null;
@@ -80,7 +82,7 @@ export function createState(): AppState {
   return {
     database: emptyDatabase(), selectedDate: todayKey(), selectedEventIndex: 0, selectedCalendarIndex: 0,
     view: "month", focus: "calendar", mainFocus: "calendar", sidebarOpen: false, prompt: null, editor: null, confirmDelete: null,
-    dayOpen: false, detailScroll: 0, helpOpen: false, notice: { text: "Connecting to cald…", kind: "info", at: Date.now() }, remoteAlias: null,
+    dayOpen: false, detailScroll: 0, dayTimelineScroll: null, helpOpen: false, notice: { text: "Connecting to cald…", kind: "info", at: Date.now() }, remoteAlias: null,
     connected: false, cols: process.stdout.columns || 100, rows: process.stdout.rows || 30, pendingKeys: "",
     layout: { sidebarWidth: 0, calendarRows: [], monthCells: [], mainLeft: 1, bodyTop: 2, bodyBottom: 20, actions: [], eventRows: [], editorFields: [] },
   };
@@ -106,6 +108,7 @@ export function selectDate(state: AppState, key: DateKey): void {
   state.selectedDate = key;
   state.selectedEventIndex = 0;
   state.detailScroll = 0;
+  state.dayTimelineScroll = null;
 }
 
 export function moveDate(state: AppState, days: number): void { selectDate(state, addDays(state.selectedDate, days)); }

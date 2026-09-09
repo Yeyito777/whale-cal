@@ -55,8 +55,9 @@ function fixture(cols = 180, rows = 40) {
 test("day details explain exact overlaps while retaining independent selection and completion", () => {
   const s = fixture(); s.dayOpen = true;
   let frame = buildFrame(s); let text = frame.rows.map(stripAnsi).join("\n");
-  expect(text).toContain("∥ 3 events overlap");
-  expect(text).toContain("∥ Concurrent with");
+  expect(text).toContain("┌▸ Lecture");
+  expect(text).toContain("┌Study");
+  expect(text).toContain("Overlaps with");
   expect(text).toContain("10:30–11:00 · 30m shared");
   expect(text).not.toContain("11:00–11:30 · 30m shared");
   expect(s.layout.eventRows.find(r => r.index === 0)).toBeDefined();
@@ -68,16 +69,16 @@ test("day details explain exact overlaps while retaining independent selection a
   expect(text).toContain("11:00–11:30 · 30m shared");
   s.database.events[1]!.completed = true;
   frame = buildFrame(s);
-  expect(frame.rows.map(stripAnsi).join("\n")).toContain("∥ ✓ Study");
+  expect(frame.rows.map(stripAnsi).join("\n")).toContain("✓ Study");
   expect(frame.rows.join("\n")).toContain(theme.strike);
 });
 
-test("month, week and agenda consistently mark overlapping reservations", () => {
+test("overview views stay uncluttered; hidden calendars do not create timeline overlaps", () => {
   const s = fixture();
   for (const view of ["month", "week", "agenda"] as const) {
     s.view = view;
     const frame = buildFrame(s);
-    expect(frame.rows.map(stripAnsi).join("\n")).toContain("∥");
+    expect(frame.rows.map(stripAnsi).join("\n")).not.toContain("∥");
     expect(frame.rows.every(row => width(row) <= s.cols)).toBe(true);
   }
   // Hiding the other calendar must remove both the marker and shared-time details.
@@ -85,18 +86,7 @@ test("month, week and agenda consistently mark overlapping reservations", () => 
   s.database.calendars.push({ ...s.database.calendars[0]!, id: "hidden", visible: false });
   s.dayOpen = true;
   expect(eventsOnSelectedDate(s)).toHaveLength(1);
-  expect(buildFrame(s).rows.map(stripAnsi).join("\n")).not.toContain("∥");
-});
-
-test("agenda detects overlaps after midnight, not just on an event's start date", () => {
-  const s = fixture(); s.view = "agenda";
-  s.database.events = [
-    event("Night", "22:00", "02:00", { endDate: "2026-09-15" }),
-    event("Early", "01:30", "03:00", { startDate: "2026-09-15", endDate: "2026-09-15" }),
-  ];
-  const text = buildFrame(s).rows.map(stripAnsi).join("\n");
-  expect(text).toContain("∥ Night");
-  expect(text).toContain("∥ Early");
+  expect(buildFrame(s).rows.map(stripAnsi).join("\n")).not.toContain("Overlaps with");
 });
 
 test("compact day lists keep selected rows clickable with concurrency summaries", () => {

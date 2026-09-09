@@ -165,10 +165,9 @@ test("day render includes gaps, keeps them non-editable, and ignores hidden cale
   const text = frame.rows.map(stripAnsi).join("\n");
   expect(text).toContain("22h free");
   expect(text).toContain("11:00–13:00");
-  expect(text).toContain("○ Free");
-  expect(state.layout.eventRows.map(r => r.index)).toEqual([0, 1]);
-  expect(state.layout.eventRows[1]!.row - state.layout.eventRows[0]!.row).toBe(2);
-  for (const hit of state.layout.eventRows) expect(stripAnsi(frame.rows[hit.row - 1]!)).not.toContain("○ Free");
+  expect(text).toContain("Free 11:00–13:00");
+  expect([...new Set(state.layout.eventRows.map(r => r.index))]).toEqual([0, 1]);
+  for (const hit of state.layout.eventRows) expect(stripAnsi(frame.rows[hit.row - 1]!)).not.toContain("Free ");
   expect(state.layout.dayList!.bottom).toBeGreaterThan(state.layout.eventRows.at(-1)!.row);
   state.database.events.push(event("All-day deadline"));
   const withReminder = buildFrame(state).rows.map(stripAnsi).join("\n");
@@ -179,6 +178,6 @@ test("day render includes gaps, keeps them non-editable, and ignores hidden cale
   const withMissingEnd = buildFrame(state).rows.map(stripAnsi).join("\n");
   expect(withMissingEnd).toContain("22h free");
   expect(withMissingEnd).toContain("1 missing end time");
-  expect(withMissingEnd).toContain("excluded from free-time total");
+  expect(withMissingEnd).toContain("09:00–?");
   expect(withMissingEnd).toContain("11:00–13:00");
 });
