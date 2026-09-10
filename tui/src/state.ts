@@ -39,6 +39,7 @@ export interface ActionHit { action: string; left: number; right: number; row: n
 export interface LayoutState {
   dayList?: { left: number; right: number; top: number; bottom: number };
   dayTimeline?: { scroll: number; maxScroll: number };
+  deadlineDetails?: { left: number; right: number; top: number; bottom: number; maxScroll: number };
   sidebarWidth: number;
   calendarRows: Array<{ calendarId?: string; groupId?: string; row: number }>;
   monthCells: CalendarCellHit[];
@@ -282,7 +283,9 @@ export function deadlinesInView(state: AppState): EventOccurrence[] {
   state.deadlineMarkedKeys = state.deadlineMarkedKeys.filter(key => keys.has(key));
   const index = items.findIndex(item => deadlineKey(item) === state.deadlineSelectedKey);
   state.deadlineIndex = index >= 0 ? index : Math.max(0, Math.min(state.deadlineIndex, items.length - 1));
-  state.deadlineSelectedKey = items[state.deadlineIndex] ? deadlineKey(items[state.deadlineIndex]!) : null;
+  const selectedKey = items[state.deadlineIndex] ? deadlineKey(items[state.deadlineIndex]!) : null;
+  if (selectedKey !== state.deadlineSelectedKey) state.detailScroll = 0;
+  state.deadlineSelectedKey = selectedKey;
   return items;
 }
 
@@ -291,13 +294,14 @@ export function selectedDeadline(state: AppState): EventOccurrence | null {
 }
 
 export function moveDeadlineSelection(state: AppState, amount: number): void {
+  state.detailScroll = 0;
   const items = deadlinesInView(state);
   state.deadlineIndex = Math.max(0, Math.min(items.length - 1, state.deadlineIndex + amount));
   state.deadlineSelectedKey = items[state.deadlineIndex] ? deadlineKey(items[state.deadlineIndex]!) : null;
 }
 
 export function setDeadlineFilter(state: AppState, filter: DeadlineFilter): void {
-  state.deadlineFilter = filter; state.deadlineMarkedKeys = [];
+  state.deadlineFilter = filter; state.deadlineMarkedKeys = []; state.detailScroll = 0;
   state.deadlineIndex = 0; state.deadlineSelectedKey = null;
 }
 

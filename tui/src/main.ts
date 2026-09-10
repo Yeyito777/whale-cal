@@ -412,8 +412,8 @@ function handleDeadlineKey(key: KeyEvent): void {
   if (key.type === "escape") { state.view = "month"; return; }
   if (key.type === "down") { moveDeadlineSelection(state, 1); return; }
   if (key.type === "up") { moveDeadlineSelection(state, -1); return; }
-  if (key.type === "ctrl-d") { moveDeadlineSelection(state, 5); return; }
-  if (key.type === "ctrl-u") { moveDeadlineSelection(state, -5); return; }
+  if (key.type === "ctrl-d") { if (state.layout.deadlineDetails) state.detailScroll = Math.min(state.layout.deadlineDetails.maxScroll, state.detailScroll + 5); else moveDeadlineSelection(state, 5); return; }
+  if (key.type === "ctrl-u") { if (state.layout.deadlineDetails) state.detailScroll = Math.max(0, state.detailScroll - 5); else moveDeadlineSelection(state, -5); return; }
   if (key.type === "enter") { if (selectedOccurrence(state)) editSelected(); return; }
   if (key.type !== "char") return;
   switch (key.char) {
@@ -653,6 +653,7 @@ function handleMouse(event: MouseEvent): void {
       if (hit.action.startsWith("deadline-filter:")) { setDeadlineFilter(state, hit.action.slice(16) as DeadlineFilter); scheduleRender(); return; }
       if (hit.action.startsWith("deadline-toggle:")) {
         const index = Number(hit.action.slice(16)), items = deadlinesInView(state);
+        if (state.deadlineIndex !== index) state.detailScroll = 0;
         state.deadlineIndex = index; state.deadlineSelectedKey = items[index] ? deadlineKey(items[index]!) : null;
         completeSelected(); scheduleRender(); return;
       }
@@ -698,10 +699,14 @@ function handleMouse(event: MouseEvent): void {
     scheduleRender(); return;
   }
   if (state.view === "deadlines") {
-    if (event.button === 64 || event.button === 65) moveDeadlineSelection(state, event.button === 64 ? -1 : 1);
+    if (event.button === 64 || event.button === 65) {
+      const details = state.layout.deadlineDetails;
+      if (details && event.col >= details.left && event.row >= details.top && event.row <= details.bottom) state.detailScroll = Math.max(0, Math.min(details.maxScroll, state.detailScroll + (event.button === 64 ? -3 : 3)));
+      else moveDeadlineSelection(state, event.button === 64 ? -1 : 1);
+    }
     else if (event.action === "press" && event.button === 0) {
       const hit = state.layout.eventRows.find(hit => hit.row === event.row && event.col >= hit.left && event.col <= hit.right);
-      if (hit) { const items = deadlinesInView(state); state.deadlineIndex = hit.index; state.deadlineSelectedKey = items[hit.index] ? deadlineKey(items[hit.index]!) : null; }
+      if (hit) { const items = deadlinesInView(state); state.detailScroll = 0; state.deadlineIndex = hit.index; state.deadlineSelectedKey = items[hit.index] ? deadlineKey(items[hit.index]!) : null; }
     }
     scheduleRender(); return;
   }

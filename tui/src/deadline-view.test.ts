@@ -106,3 +106,42 @@ test("deadline view is available in slash parsing and autocomplete", () => {
   expect(runCommand("/view deadlines", s)).toEqual({ type: "view", view: "deadlines" });
   expect(commandCompletions("/view d", 7, s).map(item => item.value)).toEqual(["/view deadlines"]);
 });
+
+test("deadline polish uses white titles, restrained calendar markers, and contextual controls", () => {
+  const s = fixture(); s.cols = 210; s.rows = 40;
+  const frame = buildFrame(s), text = frame.rows.map(stripAnsi).join("\n");
+  const title = frame.rows.find(row => stripAnsi(row).includes("○ Old"))!;
+  expect(title).toContain(theme.text + "Old");
+  expect(title).toContain(theme.sidebarSelBg);
+  expect(text).not.toContain("0 marked");
+  expect(text).not.toContain("Recurring through");
+  expect(text).toContain("Date only");
+  expect(text).toContain("Tomorrow");
+  expect(s.layout.actions.some(action => action.action === "deadline-reopen")).toBe(false);
+  expect(s.layout.deadlineDetails!.left).toBeLessThan(110);
+  markDeadline(s);
+  const marked = buildFrame(s).rows.map(stripAnsi).join("\n");
+  expect(marked).toContain("1 marked");
+  expect(s.layout.actions.some(action => action.action === "deadline-reopen")).toBe(true);
+  expect(s.layout.actions.some(action => action.action === "deadline-clear")).toBe(true);
+});
+
+test("notes have a readable measure, scroll independently, and reset when selection changes", () => {
+  const s = fixture(); s.cols = 240; s.rows = 24;
+  s.database.events[0]!.notes = Array.from({ length: 60 }, (_, i) => `Paragraph ${i}: ` + "readable notes ".repeat(8)).join("\n\n");
+  const frame = buildFrame(s), pane = s.layout.deadlineDetails!;
+  expect(pane.maxScroll).toBeGreaterThan(0);
+  // The divider has three cells including its following gutter.
+  for (const row of frame.rows.slice(pane.top - 1, pane.bottom)) {
+    expect(width(stripAnsi(row).slice(pane.left - 1 + 3).trimEnd())).toBeLessThanOrEqual(64);
+  }
+  const key = s.deadlineSelectedKey;
+  s.detailScroll = 10000;
+  const bottom = buildFrame(s).rows.map(stripAnsi).join("\n");
+  expect(bottom).toContain("Paragraph 59");
+  expect(bottom).toContain("End of details");
+  expect(s.deadlineSelectedKey).toBe(key);
+  expect(s.detailScroll).toBe(pane.maxScroll);
+  moveDeadlineSelection(s, 1);
+  expect(s.detailScroll).toBe(0);
+});

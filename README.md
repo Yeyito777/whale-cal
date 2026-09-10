@@ -105,8 +105,14 @@ occurrences through the next 12 months; that horizon is shown in the view.
 Local calendar filters apply here too.
 
 The list defaults to **Pending**. **Completed** and **All** show finished items
-with checkmarks and strikethrough. Overdue, Today, Upcoming, and Completed sections
-make urgency clear; wider terminals also show the selected item's notes and details.
+with checkmarks and strikethrough. Overdue, Today, Tomorrow, the next seven days,
+and month sections make urgency clear. Titles stay white; calendar color is limited
+to the small status marker, and amber dates signal urgency. Dates align in their own
+column where space allows. Bulk controls appear when rows are marked.
+Wider terminals show a bounded-width notes/details pane rather than stretching
+text across the screen. Wheel over that pane or use `Ctrl+D`/`Ctrl+U` to scroll
+its contents without moving the selected deadline (in compact layouts, these
+keys page through the list). Changing selection resets the details scroll.
 
 - `j`/`k`, arrows, or mouse wheel navigate; `gg`/`G` jump to first/last.
 - `;` toggles completion of the selected deadline; its checkmark is clickable.
