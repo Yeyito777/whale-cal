@@ -1,3 +1,4 @@
+import { revealDeadline, type DeadlineListEntry } from "./deadline-scroll";
 import { dateFromKey, daysBetween, deadlineIsOverdue, eventIsCompleted, formatMonthYear, todayKey } from "@whale-cal/shared/dates";
 import { deadlineKey, deadlineOccurrences } from "./deadline-list";
 import { deadlinesInView, visibleEvents, type AppState } from "./state";
@@ -34,6 +35,7 @@ export function renderDeadlines(state: AppState, columns: number, height: number
   rows[2] = styled(`${theme.borderUnfocused} ${"─".repeat(Math.max(0, listWidth - 3))}  `, listWidth);
   const bodyTop = 3, body = Math.max(0, height - bodyTop - 1);
   const entries: Array<{ text: string; index?: number; title?: boolean }> = [];
+  const listEntries: DeadlineListEntry[] = [];
   let previous = "";
   const sideBySideDate = listWidth >= 68;
   const dateWidth = 22, titleWidth = listWidth - (sideBySideDate ? dateWidth + 3 : 2);
@@ -43,8 +45,10 @@ export function renderDeadlines(state: AppState, columns: number, height: number
     const overdue = deadlineIsOverdue(item.event, item.startDate);
     const days = daysBetween(today, item.startDate);
     const group = done ? "Completed" : overdue ? "Overdue" : days === 0 ? "Today" : days === 1 ? "Tomorrow" : days < 7 ? "Next seven days" : formatMonthYear(item.startDate);
+    let revealTop = entries.length;
     if (group !== previous) {
       if (previous) entries.push({ text: "" });
+      revealTop = entries.length;
       entries.push({ text: ` ${overdue ? theme.warning : theme.muted}${theme.bold}${group}${theme.boldOff}` });
       previous = group;
     }
@@ -58,11 +62,13 @@ export function renderDeadlines(state: AppState, columns: number, height: number
     const when = item.event.startTime ?? "Date only";
     const subtitle = sideBySideDate ? `${calendar?.name ?? "Calendar"}${item.event.recurrence ? " · Repeats" : ""}`
       : `${due} · ${when} · ${calendar?.name ?? "Calendar"}${item.event.recurrence ? " · ↻" : ""}`;
+    listEntries.push({ index, key: deadlineKey(item), top: entries.length, bottom: entries.length + 1, revealTop });
     entries.push({ index, title: true, text: pair(label, `${dateColor}${due}`) });
     entries.push({ index, text: pair(`     ${theme.muted}${truncate(subtitle, Math.max(1, titleWidth - 5))}`, `${theme.muted}${when}${overdue ? " · overdue" : ""}`) });
   }
-  const anchor = Math.max(0, entries.findIndex(entry => entry.index === state.deadlineIndex));
-  const scroll = Math.max(0, Math.min(Math.max(0, entries.length - body), anchor - Math.min(2, Math.max(0, body - 2))));
+  state.layout.deadlineList = { height: body, total: entries.length, entries: listEntries };
+  const scroll = revealDeadline(state.deadlineScroll, state.layout.deadlineList, state.deadlineIndex);
+  state.deadlineScroll = scroll;
   const details: string[] = [];
   const room = Math.min(64, columns - listWidth - 5);
   if (selected && split) {

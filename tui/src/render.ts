@@ -383,6 +383,7 @@ function renderHelpOverlay(state: AppState, rows: string[]): void {
     ...(state.view === "deadlines" ? [
       ["j / k", "next / previous deadline"], ["Space / m", "mark deadline"],
       ["D / U", "complete / reopen marked"], ["f", "cycle status filter"],
+      ["Ctrl+E/Y", "scroll one line"], ["Ctrl+D/U", "scroll half a page"], ["Ctrl+F/B", "scroll a page"],
     ] : [["h j k l", "move by day / week"], ["[  ]", "previous / next month"], ["t or gg", "today"], ["gj", "deadline checklist"]]),
     ["Enter", "open selected day / edit deadline"], ["n / a", "new event"], ["e", "edit selected event"],
     ["d", "delete selected event"], [";", "done / unfinished"], ["J / K", "next / previous event"], ["v", "cycle view"],

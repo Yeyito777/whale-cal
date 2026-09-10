@@ -110,11 +110,16 @@ and month sections make urgency clear. Titles stay white; calendar color is limi
 to the small status marker, and amber dates signal urgency. Dates align in their own
 column where space allows. Bulk controls appear when rows are marked.
 Wider terminals show a bounded-width notes/details pane rather than stretching
-text across the screen. Wheel over that pane or use `Ctrl+D`/`Ctrl+U` to scroll
-its contents without moving the selected deadline (in compact layouts, these
-keys page through the list). Changing selection resets the details scroll.
+text across the screen. Wheel over that pane to scroll its contents without moving
+the selected deadline. Changing selection resets the details scroll.
 
-- `j`/`k`, arrows, or mouse wheel navigate; `gg`/`G` jump to first/last.
+- `j`/`k`, arrows, or mouse wheel navigate; the list stays still until the selected
+  item reaches a viewport edge. `gg`/`G` jump to first/last.
+- Exocortex-style scrolling: `Ctrl+E`/`Ctrl+Y` scroll one line while keeping the
+  selected item until it would leave the viewport; `Ctrl+D`/`Ctrl+U` move the list
+  and selection by half a viewport; `Ctrl+F`/`Ctrl+B` scroll a full page with two
+  context rows and place selection at the new page edge. These keys always act
+  on the deadline list, not its notes pane.
 - `;` toggles completion of the selected deadline; its checkmark is clickable.
 - Space or `m` marks/unmarks a row for a bulk action. Marks themselves are local.
 - `D` completes marked deadlines; `U` reopens them. With no marks, these operate

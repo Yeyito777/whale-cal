@@ -1,3 +1,4 @@
+import type { DeadlineListViewport } from "./deadline-scroll";
 import { deadlineKey, deadlineOccurrences, filterDeadlines, type DeadlineFilter } from "./deadline-list";
 import { addDays, eventIsCompleted, isDateKey, isTimeKey, occurrencesOnDate, todayKey } from "@whale-cal/shared/dates";
 import type { Calendar, CalendarDatabase, CalendarEvent, CalendarItemKind, CalendarView, DateKey, EventDraft, EventOccurrence, RecurrenceRule } from "@whale-cal/shared/types";
@@ -37,6 +38,7 @@ export interface Notice { text: string; kind: "info" | "success" | "warning" | "
 export interface CalendarCellHit { date: DateKey; left: number; right: number; top: number; bottom: number }
 export interface ActionHit { action: string; left: number; right: number; row: number }
 export interface LayoutState {
+  deadlineList?: DeadlineListViewport;
   dayList?: { left: number; right: number; top: number; bottom: number };
   dayTimeline?: { scroll: number; maxScroll: number };
   deadlineDetails?: { left: number; right: number; top: number; bottom: number; maxScroll: number };
@@ -62,6 +64,7 @@ export interface AppState {
   view: CalendarView;
   deadlineFilter: DeadlineFilter;
   deadlineIndex: number;
+  deadlineScroll: number;
   deadlineSelectedKey: string | null;
   deadlineMarkedKeys: string[];
   focus: Focus;
@@ -90,7 +93,7 @@ export function emptyDatabase(): CalendarDatabase {
 export function createState(): AppState {
   return {
     database: emptyDatabase(), selectedDate: todayKey(), selectedEventIndex: 0, selectedCalendarIndex: 0, selectedGroupId: null, collapsedGroupIds: [], hiddenCalendarIdsBySource: {},
-    view: "month", deadlineFilter: "pending", deadlineIndex: 0, deadlineSelectedKey: null, deadlineMarkedKeys: [], focus: "calendar", mainFocus: "calendar", sidebarOpen: false, prompt: null, editor: null, confirmDelete: null,
+    view: "month", deadlineFilter: "pending", deadlineIndex: 0, deadlineScroll: 0, deadlineSelectedKey: null, deadlineMarkedKeys: [], focus: "calendar", mainFocus: "calendar", sidebarOpen: false, prompt: null, editor: null, confirmDelete: null,
     dayOpen: false, detailScroll: 0, dayTimelineScroll: null, helpOpen: false, notice: { text: "Connecting to cald…", kind: "info", at: Date.now() }, remoteAlias: null,
     connected: false, cols: process.stdout.columns || 100, rows: process.stdout.rows || 30, pendingKeys: "",
     layout: { sidebarWidth: 0, calendarRows: [], monthCells: [], mainLeft: 1, bodyTop: 2, bodyBottom: 20, actions: [], eventRows: [], editorFields: [] },
@@ -301,7 +304,7 @@ export function moveDeadlineSelection(state: AppState, amount: number): void {
 }
 
 export function setDeadlineFilter(state: AppState, filter: DeadlineFilter): void {
-  state.deadlineFilter = filter; state.deadlineMarkedKeys = []; state.detailScroll = 0;
+  state.deadlineFilter = filter; state.deadlineMarkedKeys = []; state.detailScroll = 0; state.deadlineScroll = 0;
   state.deadlineIndex = 0; state.deadlineSelectedKey = null;
 }
 

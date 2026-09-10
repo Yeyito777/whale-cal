@@ -1,3 +1,4 @@
+import { handleDeadlineScroll } from "./deadline-scroll";
 import { handleViewNavigation } from "./view-navigation";
 import { deadlineKey, type DeadlineFilter } from "./deadline-list";
 import { addDays, addMonths, eventIsCompleted, occurrencesForRange, todayKey } from "@whale-cal/shared/dates";
@@ -409,11 +410,10 @@ function completeDeadlineSelection(completed: boolean): void {
 }
 
 function handleDeadlineKey(key: KeyEvent): void {
+  if (handleDeadlineScroll(state, key)) return;
   if (key.type === "escape") { state.view = "month"; return; }
   if (key.type === "down") { moveDeadlineSelection(state, 1); return; }
   if (key.type === "up") { moveDeadlineSelection(state, -1); return; }
-  if (key.type === "ctrl-d") { if (state.layout.deadlineDetails) state.detailScroll = Math.min(state.layout.deadlineDetails.maxScroll, state.detailScroll + 5); else moveDeadlineSelection(state, 5); return; }
-  if (key.type === "ctrl-u") { if (state.layout.deadlineDetails) state.detailScroll = Math.max(0, state.detailScroll - 5); else moveDeadlineSelection(state, -5); return; }
   if (key.type === "enter") { if (selectedOccurrence(state)) editSelected(); return; }
   if (key.type !== "char") return;
   switch (key.char) {

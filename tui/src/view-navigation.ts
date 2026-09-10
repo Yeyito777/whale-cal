@@ -11,7 +11,7 @@ export function handleViewNavigation(state: AppState, key: KeyEvent): boolean {
       state.view = "deadlines"; state.dayOpen = false; return true;
     }
     if (key.type === "char" && key.char === "g") {
-      if (state.view === "deadlines" && !state.dayOpen) moveDeadlineSelection(state, -Number.MAX_SAFE_INTEGER);
+      if (state.view === "deadlines" && !state.dayOpen) { moveDeadlineSelection(state, -Number.MAX_SAFE_INTEGER); state.deadlineScroll = 0; }
       else selectDate(state, todayKey());
       return true;
     }
