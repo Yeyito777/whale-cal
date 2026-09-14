@@ -137,12 +137,31 @@ describe("calendar layouts", () => {
     expect(state.editor).toBeNull();
   });
 
-  test("tiny terminals have a safe resize screen and no stale hit targets", () => {
-    const state = fixture(32, 8);
-    state.editor = createEditor(state);
-    const frame = buildFrame(state);
-    expect(frame.rows).toHaveLength(8);
-    expect(frame.rows.every(row => width(row) <= 32)).toBe(true);
-    expect(state.layout.actions).toEqual([]);
+  test("small terminals render all views and overlays instead of enforcing a minimum size", () => {
+    for (const [cols, rows] of [[1, 1], [8, 4], [20, 10], [32, 8], [40, 16], [50, 40], [53, 17]]) {
+      for (const mode of ["month", "week", "agenda", "deadlines", "day", "editor", "help", "delete", "prompt"]) {
+        const state = fixture();
+        buildFrame(state); // resizing must also discard old off-screen targets
+        state.cols = cols!; state.rows = rows!;
+        if (mode === "month" || mode === "week" || mode === "agenda" || mode === "deadlines") state.view = mode;
+        if (mode === "day") state.dayOpen = true;
+        if (mode === "editor") state.editor = createEditor(state);
+        if (mode === "help") state.helpOpen = true;
+        if (mode === "delete") state.confirmDelete = state.database.events[0]!;
+        if (mode === "prompt") { state.prompt = { text: "/", cursor: 1, mode: "insert" }; state.mainFocus = "prompt"; }
+        const frame = buildFrame(state);
+        expect(frame.rows).toHaveLength(rows!);
+        expect(frame.rows.every(row => width(painted(row)) <= cols!)).toBe(true);
+        expect(frame.rows.join("\n")).not.toContain("Resize terminal");
+        for (const hit of [...state.layout.actions, ...state.layout.eventRows, ...state.layout.editorFields]) {
+          expect(hit.left).toBeGreaterThanOrEqual(1);
+          expect(hit.right).toBeLessThanOrEqual(cols!);
+          expect(hit.row).toBeGreaterThanOrEqual(1);
+          expect(hit.row).toBeLessThanOrEqual(rows!);
+        }
+        if (cols! >= 40 && mode !== "editor" && mode !== "help" && mode !== "delete")
+          expect(stripAnsi(frame.rows[0]!)).toContain("Whale Cal");
+      }
+    }
   });
 });

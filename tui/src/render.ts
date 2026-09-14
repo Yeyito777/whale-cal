@@ -29,6 +29,10 @@ function segment(content: string, target: number, bg = theme.appBg): string {
 
 function putOverlayRow(rows: string[], row: number, left: number, target: number, content: string): void {
   if (row < 0 || row >= rows.length) return;
+  const columns = width(rows[row]!.split(/\x1b\[\d+G/)[0]!);
+  left = Math.max(1, left);
+  target = Math.min(target, columns - left + 1);
+  if (target <= 0) return;
   rows[row] = overlayAt(rows[row]!, left, segment(content, target));
 }
 
@@ -338,7 +342,7 @@ function renderDayOverlay(state: AppState, rows: string[]): void {
 }
 
 function renderEditorOverlay(state: AppState, rows: string[], editor: EditorState): { row: number; col: number } | null {
-  const boxWidth = Math.min(82, state.cols - 6);
+  const boxWidth = Math.max(18, Math.min(82, state.cols - 6));
   const valueWidth = boxWidth - 17;
   const errorRows = state.rows >= 19 ? 1 : 0;
   const visibleCount = Math.min(editor.fields.length, Math.max(1, state.rows - STATUSLINE_HEIGHT - 7 - errorRows));
@@ -412,7 +416,7 @@ function renderDeleteOverlay(state: AppState, rows: string[]): void {
   const event = state.confirmDelete;
   if (!event) return;
   const boxWidth = Math.max(42, Math.min(68, state.cols - 4)), top = Math.floor(state.rows / 2) - 2;
-  const left = Math.floor((state.cols - boxWidth) / 2) + 1;
+  const left = Math.max(1, Math.floor((state.cols - boxWidth) / 2) + 1);
   const put = (row: number, content: string) => putOverlayRow(rows, row, left, boxWidth, content);
   put(top, titledOverlayBorder("Delete event?", boxWidth));
   put(top + 1, `${theme.error}│${theme.text}${center(truncate(event.title, boxWidth - 6), boxWidth - 2)}${theme.error}│`);
@@ -466,12 +470,6 @@ function renderCompletion(state: AppState, rows: string[]): void {
 export function buildFrame(state: AppState): { rows: string[]; cursor: string } {
   if (state.focus === "sidebar" && (!state.sidebarOpen || state.cols < 76)) state.focus = "calendar";
   const rows = Array.from({ length: state.rows }, () => segment("", state.cols));
-  if (state.cols < 54 || state.rows < 18) {
-    state.layout.dayList = undefined;
-    rows[Math.floor(state.rows / 2)] = segment(`${theme.muted}${truncate("Resize terminal to at least 54 × 18", state.cols)}`, state.cols);
-    state.layout.actions = []; state.layout.eventRows = []; state.layout.editorFields = []; state.layout.monthCells = []; state.layout.calendarRows = [];
-    return { rows, cursor: cursorAt(1, 1, cursorBlock, false) };
-  }
   rows[0] = renderTopbar(state);
   const footerTop = Math.max(3, state.rows - STATUSLINE_HEIGHT - 2);
   const bodyTop = 3;
@@ -486,7 +484,7 @@ export function buildFrame(state: AppState): { rows: string[]; cursor: string } 
     : state.view === "month" ? renderMonth(state, mainWidth, bodyHeight, sidebarWidth + 1)
     : state.view === "week" ? renderWeek(state, mainWidth, bodyHeight, sidebarWidth + 1)
       : renderAgenda(state, mainWidth, bodyHeight);
-  for (let index = 0; index < bodyHeight; index++) rows[bodyTop - 1 + index] = (sidebar[index] ?? "") + (main[index] ?? segment("", mainWidth));
+  for (let index = 0; index < bodyHeight; index++) rows[bodyTop - 1 + index] = segment((sidebar[index] ?? "") + (main[index] ?? segment("", mainWidth)), state.cols);
 
   const prompt = promptRendering(state);
   const borderColor = isPromptFocused(state) ? theme.accent : theme.borderUnfocused;
@@ -504,11 +502,23 @@ export function buildFrame(state: AppState): { rows: string[]; cursor: string } 
   if (state.confirmDelete) renderDeleteOverlay(state, rows);
   if (state.editor) overlayCursor = renderEditorOverlay(state, rows, state.editor);
   renderCompletion(state, rows);
-  const cursor = overlayCursor
-    ? cursorAt(overlayCursor.row, overlayCursor.col, state.editor?.mode === "insert" ? cursorBar : cursorBlock)
-    : prompt.cursor ? cursorAt(prompt.cursor.row, prompt.cursor.col, state.prompt?.mode === "normal" ? cursorBlock : cursorBar)
-      : cursorAt(1, 1, cursorBlock, false);
-  return { rows, cursor };
+  // Rendering is best-effort at every size. Only the portion actually on screen
+  // can receive clicks; clipped controls must not leave invisible hit targets.
+  const clipHit = <T extends { left: number; right: number; row: number }>(hit: T): T[] =>
+    hit.row < 1 || hit.row > state.rows || hit.right < 1 || hit.left > state.cols || hit.right < hit.left ? []
+      : [{ ...hit, left: Math.max(1, hit.left), right: Math.min(state.cols, hit.right) }];
+  state.layout.actions = state.layout.actions.flatMap(clipHit);
+  state.layout.editorFields = state.layout.editorFields.flatMap(clipHit);
+  state.layout.eventRows = state.layout.eventRows.filter(hit => hit.row >= bodyTop && hit.row <= state.layout.bodyBottom).flatMap(clipHit);
+  state.layout.monthCells = state.layout.monthCells.flatMap(hit =>
+    hit.left > state.cols || hit.right < 1 || hit.top > state.layout.bodyBottom || hit.bottom < hit.top ? []
+      : [{ ...hit, left: Math.max(1, hit.left), right: Math.min(state.cols, hit.right), bottom: Math.min(state.layout.bodyBottom, hit.bottom) }]);
+  const point = overlayCursor ?? prompt.cursor;
+  const shape = overlayCursor ? state.editor?.mode === "insert" ? cursorBar : cursorBlock
+    : state.prompt?.mode === "normal" ? cursorBlock : cursorBar;
+  const cursor = point && point.row >= 1 && point.row <= state.rows && point.col >= 1 && point.col <= state.cols
+    ? cursorAt(point.row, point.col, shape) : cursorAt(1, 1, cursorBlock, false);
+  return { rows: rows.slice(0, state.rows), cursor };
 }
 
 export function render(state: AppState): void {

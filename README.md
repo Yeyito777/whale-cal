@@ -75,8 +75,12 @@ current GUI launchd domain when available and starts automatically at login.
 | `Ctrl+Shift+R` | restart the connected daemon |
 | `Ctrl+C` or `/quit` | quit the TUI (daemon stays alive) |
 
-The calendar starts full-width with the optional sidebar closed. `Ctrl+S` opens
-the calendar filters, and that preference is remembered. Showing/hiding a calendar
+The calendar starts full-width with the optional sidebar closed.
+There is no minimum terminal size: the UI renders as much
+as fits, clipping overflowing content and controls rather than showing a resize
+screen. The sidebar remains optional and hides at narrow widths.
+
+`Ctrl+S` opens the calendar filters, and that preference is remembered. Showing/hiding a calendar
 with the sidebar or `/calendar toggle NAME` is entirely local: no daemon command,
 shared calendar mutation, or broadcast is sent. Filters are saved in this client's
 `config.json`, separately for the local daemon and each SSH alias, and survive
