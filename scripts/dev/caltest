@@ -35,6 +35,8 @@ sync_dependency_artifacts "$WORKTREE_DIR"
 sync_isolated_config "$WORKTREE_DIR"
 CAL_CONFIG_DIR="$(worktree_instance_config_dir "$WORKTREE_DIR")"
 export CAL_CONFIG_DIR
+# A developer's default remote profile must never redirect a worktree test.
+export CAL_PROFILE=local
 
 RUNTIME_DIR="$CAL_CONFIG_DIR/runtime"
 PID_FILE="$RUNTIME_DIR/cald.pid"

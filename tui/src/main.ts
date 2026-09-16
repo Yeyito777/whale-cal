@@ -79,12 +79,18 @@ function settle(reqId: string): void {
 
 function onClientEvent(event: ClientEvent): void {
   if (event.type === "route_status") {
-    state.connected = event.state === "connected";
+    state.connected = event.state === "connected" || event.retained === true;
     if (event.state === "failed" && state.editor?.saving) {
       state.editor.saving = undefined;
       state.editor.error = "Connection lost. Save status is unknown; check the day before retrying.";
     }
     if (event.state === "connected") state.remoteAlias = event.mode === "remote" ? event.alias ?? null : null;
+    if (event.state === "connected" && event.switched) {
+      pending.clear();
+      state.editor = null;
+      state.confirmDelete = null;
+      state.deadlineMarkedKeys = [];
+    }
     if (event.state === "connected") {
       state.notice = null;
       scheduleRender();
@@ -92,6 +98,12 @@ function onClientEvent(event: ClientEvent): void {
     return;
   }
   switch (event.type) {
+    case "identity": {
+      const own = state.database.calendars.findIndex(calendar => (calendar.ownerUserId ?? "local") === event.user.id);
+      if (own >= 0) state.selectedCalendarIndex = own;
+      scheduleRender();
+      return;
+    }
     case "bootstrap":
       state.database = event.database;
       state.connected = true;
@@ -117,6 +129,7 @@ function onClientEvent(event: ClientEvent): void {
       return;
     }
     case "event_deleted":
+      settle(event.reqId);
       if (!applyRevision(event.revision)) return;
       state.database.events = state.database.events.filter(item => item.id !== event.id);
       state.selectedEventIndex = Math.min(state.selectedEventIndex, Math.max(0, eventsOnSelectedDate(state).length - 1));
@@ -124,6 +137,7 @@ function onClientEvent(event: ClientEvent): void {
       scheduleRender();
       return;
     case "calendar_created":
+      settle(event.reqId);
       if (!applyRevision(event.revision)) return;
       state.database.calendars.push(event.calendar);
       state.selectedCalendarIndex = state.database.calendars.length - 1;
@@ -132,6 +146,7 @@ function onClientEvent(event: ClientEvent): void {
       scheduleRender();
       return;
     case "calendar_updated": {
+      settle(event.reqId);
       if (!applyRevision(event.revision)) return;
       const index = state.database.calendars.findIndex(item => item.id === event.calendar.id);
       if (index !== -1) state.database.calendars[index] = event.calendar;
@@ -140,12 +155,14 @@ function onClientEvent(event: ClientEvent): void {
       return;
     }
     case "calendar_deleted":
+      settle(event.reqId);
       if (!applyRevision(event.revision)) return;
       state.database.calendars = state.database.calendars.filter(item => item.id !== event.id);
       scheduleRender();
       return;
     case "group_created":
     case "group_updated": {
+      settle(event.reqId);
       if (!applyRevision(event.revision)) return;
       const groups = state.database.groups ??= [];
       const index = groups.findIndex(group => group.id === event.group.id);
@@ -268,6 +285,7 @@ function execute(action: CommandAction): void {
     case "complete": completeSelected(action.completed); return;
     case "reload": client.bootstrap(); notice("Reloading canonical calendar…"); return;
     case "ssh_status": client.routeStatus(); return;
+    case "profile_connect": void client.switchProfile(action.name); return;
     case "ssh_connect": void client.switchSsh(action.alias); return;
     case "ssh_cancel": void client.useLocal(); return;
     case "calendar_new": {

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { CalendarStore } from "./store";
@@ -106,7 +106,7 @@ describe("CalendarStore", () => {
     const event = instance.store.createEvent({ calendarId, title: "Dentist", startDate: "2026-09-02", startTime: "10:00", endTime: "11:00" });
     expect(instance.store.revision).toBe(1);
     expect(new CalendarStore(instance.path).snapshot().events[0]?.id).toBe(event.id);
-    expect(JSON.parse(readFileSync(instance.path, "utf8")).revision).toBe(1);
+    expect(new CalendarStore(instance.path).revision).toBe(1);
   });
 
   test("validates temporal ordering", () => {

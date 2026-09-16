@@ -7,6 +7,8 @@ import { isWindows, socketPath } from "@whale-cal/shared/paths";
 import type { Command, Event } from "@whale-cal/shared/protocol";
 import type { CalendarPatch, EventDraft, EventPatch } from "@whale-cal/shared/types";
 import { spawnSshProxy, validateSshAlias, type SshProcess } from "./ssh-transport";
+import { connectionProfile, type ConnectionProfile } from "@whale-cal/shared/connections";
+import { httpWire } from "./http-transport";
 
 export interface RouteEvent {
   type: "route_status";
@@ -14,6 +16,7 @@ export interface RouteEvent {
   state: "connected" | "switching" | "failed";
   alias?: string;
   switched: boolean;
+  retained?: boolean;
   message: string;
 }
 
@@ -61,7 +64,7 @@ function sshWire(alias: string): Promise<Wire> {
   });
 }
 
-async function probe(wirePromise: Promise<Wire>, timeoutMs = 15_000): Promise<ProbedWire> {
+async function probe(wirePromise: Promise<Wire>, timeoutMs = 15_000, token?: string): Promise<ProbedWire> {
   const wire = await wirePromise;
   const reqId = `probe_${randomUUID()}`;
   return new Promise((resolve, reject) => {
@@ -89,6 +92,7 @@ async function probe(wirePromise: Promise<Wire>, timeoutMs = 15_000): Promise<Pr
         if (!line) continue;
         try {
           const value = JSON.parse(line) as Event;
+          if (value.type === "error") { finish(new Error(value.message)); return; }
           if (value.type === "pong" && value.reqId === reqId) { finish(); return; }
         } catch { finish(new Error("daemon proxy returned non-protocol output")); return; }
       }
@@ -101,6 +105,7 @@ async function probe(wirePromise: Promise<Wire>, timeoutMs = 15_000): Promise<Pr
     wire.diagnostics?.on("data", onDiagnostic);
     wire.emitter.on("close", onClose);
     wire.emitter.on("error", onError);
+    if (token) wire.input.write(JSON.stringify({ type: "authenticate", reqId: `${reqId}_auth`, token }) + "\n");
     wire.input.write(JSON.stringify({ type: "probe", reqId }) + "\n");
   });
 }
@@ -114,11 +119,16 @@ export class DaemonClient {
   private alias: string | null = null;
   private switchInProgress = false;
   private disconnectHandler: (() => void) | null = null;
+  private profile: ConnectionProfile;
+  private revision = -1;
+  private readonly localTimeZone = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-  constructor(private readonly handler: (event: ClientEvent) => void, private readonly path = socketPath()) {}
+  constructor(private readonly handler: (event: ClientEvent) => void, private readonly path = socketPath(), profile?: ConnectionProfile) {
+    this.profile = profile ?? (path !== socketPath() ? { name: "local", socket: path } : connectionProfile());
+  }
 
   get connected(): boolean { return !!this.wire; }
-  get remoteAlias(): string | null { return this.alias; }
+  get remoteAlias(): string | null { return this.alias ?? (this.profile.url ? `http:${this.profile.name}` : null); }
 
   onDisconnect(handler: () => void): void { this.disconnectHandler = handler; }
 
@@ -126,8 +136,8 @@ export class DaemonClient {
     if (this.reconnecting || this.wire) return;
     this.reconnecting = true;
     try {
-      const target = this.alias ? sshWire(this.alias) : localWire(this.path);
-      const result = await probe(target);
+      const target = this.alias ? sshWire(this.alias) : this.profile.url ? httpWire(this.profile) : localWire(this.profile.socket ?? this.path);
+      const result = await probe(target, 15_000, this.alias || this.profile.url ? undefined : this.profile.token);
       this.adopt(result, false);
     } finally { this.reconnecting = false; }
   }
@@ -137,6 +147,7 @@ export class DaemonClient {
     const wire = probed.wire;
     const generation = ++this.generation;
     this.wire = wire;
+    this.revision = -1;
     this.buffer = "";
     const onData = (chunk: Buffer | string) => {
       if (this.wire !== wire || generation !== this.generation) return;
@@ -145,8 +156,8 @@ export class DaemonClient {
     const onClose = () => {
       if (this.wire !== wire || generation !== this.generation) return;
       this.wire = null;
-      const label = this.alias ? `SSH alias ${this.alias}` : `local ${hostname()}`;
-      this.handler({ type: "route_status", mode: this.alias ? "remote" : "local", state: "failed", ...(this.alias ? { alias: this.alias } : {}), switched: false, message: `Connection to ${label} was lost.` });
+      const label = this.remoteAlias ?? `local ${hostname()}`;
+      this.handler({ type: "route_status", mode: this.remoteAlias ? "remote" : "local", state: "failed", ...(this.remoteAlias ? { alias: this.remoteAlias } : {}), switched: false, message: `Connection to ${label} was lost.` });
       this.disconnectHandler?.();
     };
     wire.output.on("data", onData);
@@ -156,7 +167,8 @@ export class DaemonClient {
     wire.output.resume();
     this.status(switched);
     this.write({ type: "bootstrap" });
-    for (const command of this.pending.splice(0)) this.write(command);
+    this.write({ type: "whoami", reqId: randomUUID() });
+    this.pending = []; // Never move queued writes across routes or reconnects.
     if (old && old !== wire) old.close();
   }
 
@@ -169,24 +181,39 @@ export class DaemonClient {
       if (!line) continue;
       try {
         const event = JSON.parse(line) as Event;
+        if (event.type === "bootstrap") {
+          // HTTP replies and SSE use separate channels. An older snapshot may
+          // arrive after a newer live mutation; never roll the view backwards.
+          if (event.database.revision < this.revision) continue;
+          this.revision = event.database.revision;
+          process.env.TZ = event.database.timeZone ?? this.localTimeZone;
+        }
+        else if ("revision" in event) this.revision = Math.max(this.revision, event.revision);
         if (event.type !== "daemon_shutdown") this.handler(event);
       } catch { this.handler({ type: "error", message: "Daemon sent invalid JSON." }); }
     }
   }
 
   private write(command: Command): void {
-    if (!this.wire) { if (command.type !== "bootstrap" && command.type !== "probe") this.pending.push(command); return; }
-    try { this.wire.input.write(JSON.stringify(command) + "\n"); }
-    catch { this.pending.push(command); }
+    const mutation = /^(create|update|delete|complete)_/.test(command.type);
+    if (!this.wire || (mutation && (this.switchInProgress || this.revision < 0))) {
+      this.handler({ type: "error", ...("reqId" in command ? { reqId: command.reqId } : {}), message: "Not connected or switching servers. Edit was not queued." });
+      return;
+    }
+    const payload = mutation && this.revision >= 0 ? { ...command, ifRevision: this.revision } : command;
+    try { this.wire.input.write(JSON.stringify(payload) + "\n"); }
+    catch {
+      this.handler({ type: "error", ...("reqId" in command ? { reqId: command.reqId } : {}), message: "Write status unknown. Refresh before retrying; edit was not queued." });
+    }
   }
 
   private status(switched: boolean): void {
     this.handler({
-      type: "route_status", mode: this.alias ? "remote" : "local", state: "connected",
-      ...(this.alias ? { alias: this.alias } : {}), switched,
-      message: this.alias
-        ? `Connected daemon: SSH alias ${this.alias} (remote calendar).`
-        : `Connected daemon: local ${hostname()} (socket ${this.path}).`,
+      type: "route_status", mode: this.remoteAlias ? "remote" : "local", state: "connected",
+      ...(this.remoteAlias ? { alias: this.remoteAlias } : {}), switched,
+      message: this.remoteAlias
+        ? `Connected calendar: ${this.remoteAlias}.`
+        : `Connected daemon: local ${hostname()} (socket ${this.profile.socket ?? this.path}).`,
     });
   }
 
@@ -209,18 +236,33 @@ export class DaemonClient {
 
   async useLocal(): Promise<void> {
     if (this.switchInProgress) { this.routeError("A route switch is already in progress."); return; }
-    if (!this.alias) { this.status(false); return; }
+    if (!this.alias && !this.profile.url) { this.status(false); return; }
     this.switchInProgress = true;
     try {
-      const result = await probe(localWire(this.path), 3_000);
+      const profile = connectionProfile("local");
+      const result = await probe(localWire(profile.socket ?? this.path), 3_000, profile.token);
       this.alias = null;
+      this.profile = profile;
       this.adopt(result, true);
     } catch (cause) { this.routeError(`Could not return to the local daemon: ${cause instanceof Error ? cause.message : String(cause)}`); }
     finally { this.switchInProgress = false; }
   }
 
+  async switchProfile(name: string): Promise<void> {
+    if (this.switchInProgress) { this.routeError("A route switch is already in progress."); return; }
+    this.switchInProgress = true;
+    try {
+      const profile = connectionProfile(name);
+      const result = await probe(profile.url ? httpWire(profile) : localWire(profile.socket ?? this.path), 15_000, profile.url ? undefined : profile.token);
+      this.alias = null; this.profile = profile;
+      this.adopt(result, true);
+    } catch (error) { this.routeError(error instanceof Error ? error.message : String(error)); }
+    finally { this.switchInProgress = false; }
+  }
+
   private routeError(message: string): void {
-    this.handler({ type: "route_status", mode: this.alias ? "remote" : "local", state: "failed", ...(this.alias ? { alias: this.alias } : {}), switched: false, message });
+    this.handler({ type: "route_status", mode: this.remoteAlias ? "remote" : "local", state: "failed",
+      ...(this.remoteAlias ? { alias: this.remoteAlias } : {}), switched: false, retained: this.connected, message });
   }
 
   createEvent(event: EventDraft): string { const reqId = randomUUID(); this.write({ type: "create_event", reqId, event }); return reqId; }

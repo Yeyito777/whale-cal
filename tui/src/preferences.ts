@@ -26,7 +26,7 @@ export function loadPreferences(state: AppState, file = path()): void {
     const filters = prefs.tui?.hiddenCalendarIdsBySource;
     if (filters && typeof filters === "object" && !Array.isArray(filters)) {
       state.hiddenCalendarIdsBySource = Object.fromEntries(Object.entries(filters)
-        .filter(([source, ids]) => (source === "local" || source.startsWith("ssh:")) && Array.isArray(ids))
+        .filter(([source, ids]) => (source === "local" || source.startsWith("ssh:") || source.startsWith("http:")) && Array.isArray(ids))
         .map(([source, ids]) => [source, [...new Set(ids.filter(id => typeof id === "string"))]]));
     }
   } catch { /* malformed preferences never prevent calendar startup */ }

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://whale-cal.local/schema/cal-ipc-v1.json",
   "title": "Whale Cal daemon IPC protocol",
-  "description": "One JSON object per UTF-8 line over the cald Unix socket. Clients send commands and receive events. Unknown properties are rejected by schema-aware clients.",
+  "description": "Commands over Unix JSONL or authenticated POST /v1/commands. Live events use JSONL or GET /v1/changes (SSE). Authenticated members can read all calendars; only owners can mutate their content. ifRevision detects stale writes; mutation reqId values are durable idempotency keys.",
   "oneOf": [
     { "$ref": "#/$defs/command" },
     { "$ref": "#/$defs/event" }
@@ -15,7 +15,17 @@
     "requestId": {
       "type": "string",
       "minLength": 1,
-      "maxLength": 200
+      "maxLength": 200,
+      "description": "Client request IDs must not begin with broadcast:, which is reserved for unsolicited server notifications. Mutation IDs are durable per-user idempotency keys."
+    },
+    "revision": { "type": "integer", "minimum": 0 },
+    "user": {
+      "type": "object", "additionalProperties": false, "required": ["id", "name", "admin"],
+      "properties": { "id": { "type": "string" }, "name": { "type": "string" }, "admin": { "type": "boolean" } }
+    },
+    "tokenInfo": {
+      "type": "object", "additionalProperties": false, "required": ["tokenId", "userId", "label", "createdAt"],
+      "properties": { "tokenId": { "type": "string" }, "userId": { "type": "string" }, "label": { "type": "string" }, "createdAt": { "type": "string" } }
     },
     "date": {
       "type": "string",
@@ -41,7 +51,7 @@
     "calendarGroup": {
       "type": "object", "additionalProperties": false,
       "required": ["id", "name", "createdAt", "updatedAt"],
-      "properties": { "id": { "type": "string" }, "name": { "type": "string", "minLength": 1, "maxLength": 100 }, "createdAt": { "type": "string", "format": "date-time" }, "updatedAt": { "type": "string", "format": "date-time" } }
+      "properties": { "id": { "type": "string" }, "ownerUserId": { "type": "string" }, "name": { "type": "string", "minLength": 1, "maxLength": 100 }, "createdAt": { "type": "string", "format": "date-time" }, "updatedAt": { "type": "string", "format": "date-time" } }
     },
     "calendar": {
       "type": "object",
@@ -49,6 +59,7 @@
       "required": ["id", "name", "color", "visible", "createdAt", "updatedAt"],
       "properties": {
         "id": { "type": "string" },
+        "ownerUserId": { "type": "string" },
         "name": { "type": "string" },
         "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" },
         "visible": { "type": "boolean" },
@@ -133,6 +144,7 @@
       "additionalProperties": false,
       "required": ["version", "revision", "calendars", "events"],
       "properties": {
+        "timeZone": { "type": "string", "description": "Server IANA timezone for all wall-clock dates, times, and recurrence." },
         "version": { "const": 1 },
         "revision": { "type": "integer", "minimum": 0 },
         "calendars": { "type": "array", "items": { "$ref": "#/$defs/calendar" }, "minItems": 1 },
@@ -143,9 +155,9 @@
     "command": {
       "oneOf": [
         {"type": "object", "additionalProperties": false, "required": ["type", "reqId"], "properties": {"type": {"const": "list_groups"}, "reqId": {"$ref": "#/$defs/requestId"}}},
-        {"type": "object", "additionalProperties": false, "required": ["type", "reqId", "name"], "properties": {"type": {"const": "create_group"}, "reqId": {"$ref": "#/$defs/requestId"}, "name": {"type": "string", "minLength": 1, "maxLength": 100}}},
-        {"type": "object", "additionalProperties": false, "required": ["type", "reqId", "id", "name"], "properties": {"type": {"const": "update_group"}, "reqId": {"$ref": "#/$defs/requestId"}, "id": {"type": "string"}, "name": {"type": "string", "minLength": 1, "maxLength": 100}}},
-        {"type": "object", "additionalProperties": false, "required": ["type", "reqId", "id"], "properties": {"type": {"const": "delete_group"}, "reqId": {"$ref": "#/$defs/requestId"}, "id": {"type": "string"}}},
+        {"type": "object", "additionalProperties": false, "required": ["type", "reqId", "name"], "properties": {"type": {"const": "create_group"}, "reqId": {"$ref": "#/$defs/requestId"}, "ifRevision": {"$ref": "#/$defs/revision"}, "name": {"type": "string", "minLength": 1, "maxLength": 100}}},
+        {"type": "object", "additionalProperties": false, "required": ["type", "reqId", "id", "name"], "properties": {"type": {"const": "update_group"}, "reqId": {"$ref": "#/$defs/requestId"}, "ifRevision": {"$ref": "#/$defs/revision"}, "id": {"type": "string"}, "name": {"type": "string", "minLength": 1, "maxLength": 100}}},
+        {"type": "object", "additionalProperties": false, "required": ["type", "reqId", "id"], "properties": {"type": {"const": "delete_group"}, "reqId": {"$ref": "#/$defs/requestId"}, "ifRevision": {"$ref": "#/$defs/revision"}, "id": {"type": "string"}}},
         {
           "type": "object", "additionalProperties": false,
           "required": ["type", "reqId"],
@@ -192,23 +204,24 @@
         {
           "type": "object", "additionalProperties": false,
           "required": ["type", "reqId", "event"],
-          "properties": { "type": { "const": "create_event" }, "reqId": { "$ref": "#/$defs/requestId" }, "event": { "$ref": "#/$defs/eventDraft" } }
+          "properties": { "type": { "const": "create_event" }, "reqId": { "$ref": "#/$defs/requestId" }, "ifRevision": { "$ref": "#/$defs/revision" }, "event": { "$ref": "#/$defs/eventDraft" } }
         },
         {
           "type": "object", "additionalProperties": false,
           "required": ["type", "reqId", "id", "patch"],
-          "properties": { "type": { "const": "update_event" }, "reqId": { "$ref": "#/$defs/requestId" }, "id": { "type": "string" }, "patch": { "$ref": "#/$defs/eventPatch" } }
+          "properties": { "type": { "const": "update_event" }, "reqId": { "$ref": "#/$defs/requestId" }, "ifRevision": { "$ref": "#/$defs/revision" }, "id": { "type": "string" }, "patch": { "$ref": "#/$defs/eventPatch" } }
         },
         {
           "type": "object", "additionalProperties": false,
           "required": ["type", "reqId", "id"],
-          "properties": { "type": { "const": "delete_event" }, "reqId": { "$ref": "#/$defs/requestId" }, "id": { "type": "string" } }
+          "properties": { "type": { "const": "delete_event" }, "reqId": { "$ref": "#/$defs/requestId" }, "ifRevision": { "$ref": "#/$defs/revision" }, "id": { "type": "string" } }
         },
         {
           "type": "object", "additionalProperties": false,
           "required": ["type", "reqId", "id", "completed"],
           "properties": {
             "type": { "const": "complete_event" }, "reqId": { "$ref": "#/$defs/requestId" }, "id": { "type": "string" },
+            "ifRevision": { "$ref": "#/$defs/revision" },
             "completed": { "type": "boolean" },
             "occurrenceDate": { "$ref": "#/$defs/date", "description": "Required for recurring events: the occurrence start date, not the inspected day of a multi-day event." }
           }
@@ -216,13 +229,14 @@
         {
           "type": "object", "additionalProperties": false,
           "required": ["type", "reqId", "name"],
-          "properties": { "type": { "const": "create_calendar" }, "reqId": { "$ref": "#/$defs/requestId" }, "name": { "type": "string", "minLength": 1, "maxLength": 100 }, "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }, "groupId": { "type": "string" } }
+          "properties": { "type": { "const": "create_calendar" }, "reqId": { "$ref": "#/$defs/requestId" }, "ifRevision": { "$ref": "#/$defs/revision" }, "name": { "type": "string", "minLength": 1, "maxLength": 100 }, "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }, "groupId": { "type": "string" } }
         },
         {
           "type": "object", "additionalProperties": false,
           "required": ["type", "reqId", "id", "patch"],
           "properties": {
             "type": { "const": "update_calendar" }, "reqId": { "$ref": "#/$defs/requestId" }, "id": { "type": "string" },
+            "ifRevision": { "$ref": "#/$defs/revision" },
             "patch": {
               "type": "object", "additionalProperties": false, "minProperties": 1,
               "properties": { "name": { "type": "string", "minLength": 1, "maxLength": 100 }, "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}$" }, "visible": { "type": "boolean" }, "groupId": { "type": ["string", "null"], "description": "Set to null to ungroup." } }
@@ -232,8 +246,16 @@
         {
           "type": "object", "additionalProperties": false,
           "required": ["type", "reqId", "id"],
-          "properties": { "type": { "const": "delete_calendar" }, "reqId": { "$ref": "#/$defs/requestId" }, "id": { "type": "string" } }
-        }
+          "properties": { "type": { "const": "delete_calendar" }, "reqId": { "$ref": "#/$defs/requestId" }, "ifRevision": { "$ref": "#/$defs/revision" }, "id": { "type": "string" } }
+        },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "token"], "properties": { "type": { "const": "authenticate" }, "reqId": { "$ref": "#/$defs/requestId" }, "token": { "type": "string", "minLength": 1, "maxLength": 256 } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId"], "properties": { "type": { "const": "whoami" }, "reqId": { "$ref": "#/$defs/requestId" } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId"], "properties": { "type": { "const": "list_users" }, "reqId": { "$ref": "#/$defs/requestId" } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "name"], "properties": { "type": { "const": "create_user" }, "reqId": { "$ref": "#/$defs/requestId" }, "ifRevision": { "$ref": "#/$defs/revision" }, "name": { "type": "string", "minLength": 1, "maxLength": 100 } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId"], "properties": { "type": { "const": "list_tokens" }, "reqId": { "$ref": "#/$defs/requestId" } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "target", "id", "userId"], "properties": { "type": { "const": "assign_owner" }, "reqId": { "$ref": "#/$defs/requestId" }, "ifRevision": { "$ref": "#/$defs/revision" }, "target": { "enum": ["calendar", "group"] }, "id": { "type": "string", "minLength": 1 }, "userId": { "type": "string", "minLength": 1 } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "userId", "label"], "properties": { "type": { "const": "create_token" }, "reqId": { "$ref": "#/$defs/requestId" }, "ifRevision": { "$ref": "#/$defs/revision" }, "userId": { "type": "string", "minLength": 1 }, "label": { "type": "string", "minLength": 1, "maxLength": 100 } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "tokenId"], "properties": { "type": { "const": "revoke_token" }, "reqId": { "$ref": "#/$defs/requestId" }, "tokenId": { "type": "string", "pattern": "^[a-f0-9]{64}$" } } }
       ]
     },
     "event": {
@@ -253,8 +275,13 @@
         { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "id", "revision"], "properties": { "type": { "const": "event_deleted" }, "reqId": { "$ref": "#/$defs/requestId" }, "id": { "type": "string" }, "revision": { "type": "integer", "minimum": 1 } } },
         { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "calendar", "revision"], "properties": { "type": { "enum": ["calendar_created", "calendar_updated"] }, "reqId": { "$ref": "#/$defs/requestId" }, "calendar": { "$ref": "#/$defs/calendar" }, "revision": { "type": "integer", "minimum": 1 } } },
         { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "id", "revision"], "properties": { "type": { "const": "calendar_deleted" }, "reqId": { "$ref": "#/$defs/requestId" }, "id": { "type": "string" }, "revision": { "type": "integer", "minimum": 1 } } },
-        { "type": "object", "additionalProperties": false, "required": ["type", "message"], "properties": { "type": { "const": "error" }, "message": { "type": "string" }, "reqId": { "$ref": "#/$defs/requestId" } } },
-        { "type": "object", "additionalProperties": false, "required": ["type"], "properties": { "type": { "const": "daemon_shutdown" } } }
+        { "type": "object", "additionalProperties": false, "required": ["type", "message"], "properties": { "type": { "const": "error" }, "message": { "type": "string" }, "reqId": { "$ref": "#/$defs/requestId" }, "code": { "type": "string" } } },
+        { "type": "object", "additionalProperties": false, "required": ["type"], "properties": { "type": { "const": "daemon_shutdown" } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "user"], "properties": { "type": { "const": "identity" }, "reqId": { "$ref": "#/$defs/requestId" }, "user": { "$ref": "#/$defs/user" }, "timeZone": { "type": "string" } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "users"], "properties": { "type": { "const": "users_list" }, "reqId": { "$ref": "#/$defs/requestId" }, "users": { "type": "array", "items": { "$ref": "#/$defs/user" } } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "user"], "properties": { "type": { "const": "user_created" }, "reqId": { "$ref": "#/$defs/requestId" }, "user": { "$ref": "#/$defs/user" } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "token", "tokenId"], "properties": { "type": { "const": "token_created" }, "reqId": { "$ref": "#/$defs/requestId" }, "token": { "type": "string" }, "tokenId": { "type": "string" } } },
+        { "type": "object", "additionalProperties": false, "required": ["type", "reqId", "tokens"], "properties": { "type": { "const": "tokens_list" }, "reqId": { "$ref": "#/$defs/requestId" }, "tokens": { "type": "array", "items": { "$ref": "#/$defs/tokenInfo" } } } }
       ]
     }
   }

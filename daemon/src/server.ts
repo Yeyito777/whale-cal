@@ -3,11 +3,15 @@ import { chmodSync, existsSync, unlinkSync } from "node:fs";
 import { isWindows } from "@whale-cal/shared/paths";
 import type { Command, Event } from "@whale-cal/shared/protocol";
 import { log } from "./log";
+import type { Principal } from "./auth";
 
 export interface ClientConnection {
   id: number;
-  socket: Socket;
+  socket?: Socket;
   buffer: string;
+  principal?: Principal;
+  token?: string;
+  trustedLocal?: boolean;
 }
 
 export type CommandHandler = (client: ClientConnection, command: Command) => void | Promise<void>;
@@ -16,8 +20,12 @@ export class DaemonServer {
   private server: Server | null = null;
   private clients = new Map<number, ClientConnection>();
   private nextId = 0;
+  readonly subscribers = new Set<(event: Event) => void>();
+  private credentialCheck: (client: ClientConnection) => boolean = () => true;
 
-  constructor(private readonly path: string, private readonly handler: CommandHandler) {}
+  setCredentialCheck(check: (client: ClientConnection) => boolean): void { this.credentialCheck = check; }
+
+  constructor(private readonly path: string, private readonly handler: CommandHandler, private readonly shared = false) {}
 
   async start(): Promise<void> {
     if (!isWindows && existsSync(this.path)) {
@@ -29,13 +37,13 @@ export class DaemonServer {
       this.server.listen(this.path, resolve);
     });
     if (!isWindows) {
-      try { chmodSync(this.path, 0o600); } catch { /* permissions are best effort */ }
+      chmodSync(this.path, 0o600);
     }
     log("info", `server: listening on ${this.path}`);
   }
 
   async stop(): Promise<void> {
-    for (const client of this.clients.values()) client.socket.destroy();
+    for (const client of this.clients.values()) client.socket?.destroy();
     this.clients.clear();
     if (this.server) await new Promise<void>(resolve => this.server!.close(() => resolve()));
     this.server = null;
@@ -46,7 +54,7 @@ export class DaemonServer {
 
   private accept(socket: Socket): void {
     const id = ++this.nextId;
-    const client: ClientConnection = { id, socket, buffer: "" };
+    const client: ClientConnection = { id, socket, buffer: "", trustedLocal: !this.shared };
     this.clients.set(id, client);
     socket.setNoDelay(true);
     socket.on("data", chunk => this.data(client, chunk));
@@ -56,6 +64,7 @@ export class DaemonServer {
 
   private data(client: ClientConnection, chunk: Buffer | string): void {
     client.buffer += typeof chunk === "string" ? chunk : chunk.toString("utf8");
+    if (Buffer.byteLength(client.buffer) > 1_048_576) { client.socket?.destroy(); return; }
     let newline: number;
     while ((newline = client.buffer.indexOf("\n")) !== -1) {
       const line = client.buffer.slice(0, newline).trim();
@@ -78,10 +87,28 @@ export class DaemonServer {
   }
 
   send(client: ClientConnection, event: Event): void {
-    if (!client.socket.destroyed) client.socket.write(JSON.stringify(event) + "\n");
+    if (client.socket && !client.socket.destroyed) {
+      if (client.socket.writableLength > 2_097_152) { client.socket.destroy(); return; }
+      client.socket.write(JSON.stringify(event) + "\n");
+    }
   }
 
-  broadcast(event: Event): void {
-    for (const client of this.clients.values()) this.send(client, event);
+  broadcast(event: Event, exclude?: ClientConnection): void {
+    this.authorizeSubscribers(this.credentialCheck);
+    // Broadcasts must not impersonate a request reply on another user's socket.
+    // Request IDs are deduplicated per user, so different users may reuse them.
+    const wireEvent: Event = "reqId" in event
+      ? { ...event, reqId: `broadcast:${"revision" in event ? event.revision : event.type}` } : event;
+    for (const client of this.clients.values()) {
+      if (client !== exclude && (client.trustedLocal || client.principal)) this.send(client, wireEvent);
+    }
+    for (const subscriber of this.subscribers) subscriber(wireEvent);
+  }
+
+  /** Recheck long-lived socket credentials, including revocation, before publishing. */
+  authorizeSubscribers(check: (client: ClientConnection) => boolean): void {
+    for (const client of this.clients.values()) {
+      if (!check(client)) { client.socket?.destroy(); this.clients.delete(client.id); }
+    }
   }
 }

@@ -19,6 +19,7 @@ test("IPC schema publishes every version-one command as a distinct variant", () 
     "list_groups", "create_group", "update_group", "delete_group",
     "probe", "get_schema", "restart_daemon", "bootstrap", "list_calendars", "list_events", "get_event",
     "create_event", "update_event", "delete_event", "complete_event", "create_calendar", "update_calendar", "delete_calendar",
+    "authenticate", "whoami", "list_users", "create_user", "list_tokens", "assign_owner", "create_token", "revoke_token",
   ]);
   expect(new Set(commands).size).toBe((commands ?? []).length);
 });

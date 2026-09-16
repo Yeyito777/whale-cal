@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CalendarStore } from "./store";
@@ -31,7 +31,7 @@ test("groups persist, preserve calendar identity and visibility, and delete with
     expect(store.snapshot().calendars.find(c => c.id === course.id)?.groupId).toBe(another.id);
     expect(store.snapshot().events).toEqual(beforeEvents);
     store.updateCalendar(course.id, { groupId: null });
-    expect(JSON.parse(readFileSync(path, "utf8")).calendars.every((c: any) => !c.groupId)).toBe(true);
+    expect(new CalendarStore(path).snapshot().calendars.every(c => !c.groupId)).toBe(true);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 

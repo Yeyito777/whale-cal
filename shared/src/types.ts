@@ -15,6 +15,8 @@ export interface RecurrenceRule {
 
 export interface Calendar {
   id: string;
+  /** Absent only on legacy protocol records; those belong to the local owner. */
+  ownerUserId?: string;
   groupId?: string;
   name: string;
   color: string;
@@ -25,6 +27,7 @@ export interface Calendar {
 
 export interface CalendarGroup {
   id: string;
+  ownerUserId?: string;
   name: string;
   createdAt: string;
   updatedAt: string;
@@ -65,6 +68,8 @@ export interface EventOccurrence {
 export interface CalendarDatabase {
   version: 1;
   revision: number;
+  /** One explicit IANA wall-clock timezone per server, including all-day recurrence. */
+  timeZone?: string;
   calendars: Calendar[];
   groups?: CalendarGroup[];
   events: CalendarEvent[];

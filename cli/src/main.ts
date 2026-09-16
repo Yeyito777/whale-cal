@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 import { randomUUID } from "node:crypto";
+import { existsSync, writeFileSync } from "node:fs";
 import { addDays, eventIsCompleted, formatItemTime, isDateKey, isTimeKey, todayKey } from "@whale-cal/shared/dates";
 import type { Command, Event } from "@whale-cal/shared/protocol";
 import type { Calendar, CalendarGroup, CalendarPatch, CalendarEvent, CalendarItemKind, EventDraft, EventPatch, RecurrenceRule } from "@whale-cal/shared/types";
@@ -7,7 +8,18 @@ import { request, requestRaw } from "./connection";
 
 const HELP = `Whale Cal CLI — daemon-backed calendar access for people and AI agents
 
+Connection: use --profile NAME before the command, CAL_PROFILE, or
+CAL_SERVER_URL with CAL_TOKEN_FILE/CAL_TOKEN. Default is the local Unix socket.
+Remote connections never fall back to local data.
+
 Usage:
+  cal whoami [--json]
+  cal users [--json]
+  cal tokens [--json]                                     (admin; IDs, not secrets)
+  cal owner calendar|group ID --user USER_ID --yes          (admin; group includes calendars)
+  cal user create --name TEXT [--json]                      (admin)
+  cal token create USER_ID --label TEXT --output FILE       (admin; writes 0600 file)
+  cal token revoke TOKEN_ID --yes                          (admin)
   cal status [--json]
   cal schema
   cal calendars [--group ID|NAME] [--json]
@@ -251,6 +263,9 @@ async function calendarsCommand(parsed: Parsed): Promise<void> {
 async function eventsCommand(parsed: Parsed): Promise<void> {
   allowed(parsed, ["from", "to", "calendar", "query", "include-hidden", "json"]);
   if (parsed.positionals.length) throw new UsageError("events takes no positional arguments.");
+  // Date defaults follow the selected server, not the machine running this CLI.
+  const identity = await request({ type: "whoami", reqId: reqId() });
+  if (identity.type === "identity" && identity.timeZone) process.env.TZ = identity.timeZone;
   const from = option(parsed, "from") ?? todayKey();
   const to = option(parsed, "to") ?? addDays(from, 30);
   requireDate(from, "--from"); requireDate(to, "--to");
@@ -423,11 +438,61 @@ async function ipcCommand(rawArgs: string[]): Promise<void> {
 }
 
 async function main(argv: string[]): Promise<void> {
+  if (argv[0] === "--profile") {
+    if (!argv[1]) throw new UsageError("--profile requires a name.");
+    process.env.CAL_PROFILE = argv[1]; argv = argv.slice(2);
+  }
   if (!argv.length || argv[0] === "-h" || argv[0] === "--help" || argv[0] === "help") { console.log(HELP); return; }
   const [command, ...rest] = argv;
   if (command === "ipc") { await ipcCommand(rest); return; }
   const parsed = parse(rest);
   switch (command) {
+    case "whoami": case "users": case "tokens": {
+      allowed(parsed, ["json"]);
+      if (parsed.positionals.length) throw new UsageError(`${command} takes no positional arguments.`);
+      const result = await request({ type: command === "whoami" ? "whoami" : command === "users" ? "list_users" : "list_tokens", reqId: reqId() });
+      printJson(result.type === "identity" ? { ...result.user, timeZone: result.timeZone }
+        : result.type === "users_list" ? result.users : result.type === "tokens_list" ? result.tokens : result);
+      return;
+    }
+    case "owner": {
+      allowed(parsed, ["user", "yes"]);
+      const [target, id] = parsed.positionals;
+      const userId = parsed.options.get("user");
+      if (parsed.positionals.length !== 2 || !id || !["calendar", "group"].includes(target ?? "") || typeof userId !== "string" || !flag(parsed, "yes")) {
+        throw new UsageError("Usage: cal owner calendar|group ID --user USER_ID --yes");
+      }
+      await request({ type: "assign_owner", target: target as "calendar" | "group", id, userId, reqId: reqId() });
+      console.log("Ownership assigned."); return;
+    }
+    case "user": {
+      allowed(parsed, ["name", "json"]);
+      if (parsed.positionals.join(" ") !== "create") throw new UsageError("Usage: cal user create --name TEXT");
+      const name = parsed.options.get("name");
+      if (typeof name !== "string") throw new UsageError("--name is required.");
+      const result = await request({ type: "create_user", name, reqId: reqId() });
+      if (result.type !== "user_created") throw new Error("Unexpected daemon response.");
+      printJson(result.user); return;
+    }
+    case "token": {
+      const [operation, id] = parsed.positionals;
+      if (parsed.positionals.length !== 2 || !id) throw new UsageError("Usage: cal token create USER_ID --label TEXT --output FILE | cal token revoke TOKEN_ID --yes");
+      if (operation === "revoke") {
+        allowed(parsed, ["yes"]);
+        if (!flag(parsed, "yes")) throw new UsageError("Refusing to revoke without --yes.");
+        await request({ type: "revoke_token", tokenId: id, reqId: reqId() }); console.log("Token revoked."); return;
+      }
+      if (operation !== "create") throw new UsageError("Unknown token operation.");
+      allowed(parsed, ["label", "output"]);
+      const label = parsed.options.get("label"), output = parsed.options.get("output");
+      if (typeof label !== "string" || typeof output !== "string") throw new UsageError("--label and --output are required.");
+      if (existsSync(output)) throw new UsageError("Output already exists; refusing to overwrite credentials.");
+      const result = await request({ type: "create_token", userId: id, label, reqId: reqId() });
+      if (result.type !== "token_created") throw new Error("Unexpected daemon response.");
+      try { writeFileSync(output, result.token + "\n", { mode: 0o600, flag: "wx" }); }
+      catch (error) { await request({ type: "revoke_token", tokenId: result.tokenId, reqId: reqId() }); throw error; }
+      printJson({ tokenId: result.tokenId, file: output }); return;
+    }
     case "status": await statusCommand(parsed); return;
     case "schema": await schemaCommand(parsed); return;
     case "calendars": await calendarsCommand(parsed); return;

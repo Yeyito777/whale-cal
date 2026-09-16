@@ -20,7 +20,7 @@ export function repoRoot(): string { return REPO_ROOT; }
 export function configDir(): string { return CONFIG_ROOT; }
 export function dataDir(): string { return join(CONFIG_ROOT, "data"); }
 export function runtimeDir(): string { return join(CONFIG_ROOT, "runtime"); }
-export function databasePath(): string { return join(dataDir(), "calendar.json"); }
+export function databasePath(): string { return join(dataDir(), "calendar.sqlite"); }
 export function pidPath(): string { return join(runtimeDir(), "cald.pid"); }
 export function logPath(): string { return join(runtimeDir(), "cald.log"); }
 

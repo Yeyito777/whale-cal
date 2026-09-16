@@ -25,7 +25,12 @@ bun run tui
 
 Set `CAL_CONFIG_DIR` to move all data/runtime files. By default they live in this
 checkout's `config/` directory. Events are atomically persisted to
-`config/data/calendar.json`.
+`config/data/calendar.sqlite` (SQLite/WAL). On first use, an existing
+`calendar.json` is imported without changing the original file.
+
+Whale Cal also supports an optional shared server: HTTPS clients, per-user
+ownership, live updates, and the same CLI/AI interface for local and remote
+profiles. See [shared-server setup and migration](docs/shared-server.md).
 
 ## Install
 

@@ -101,7 +101,7 @@ export function createState(): AppState {
 }
 
 export function calendarFilterSource(state: AppState): string {
-  return state.remoteAlias === null ? "local" : `ssh:${state.remoteAlias}`;
+  return state.remoteAlias === null ? "local" : state.remoteAlias.startsWith("http:") ? state.remoteAlias : `ssh:${state.remoteAlias}`;
 }
 
 /** Visibility belongs to this UI, never to the canonical calendar record. */

@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./connections": "./src/connections.ts",
     "./dates": "./src/dates.ts",
     "./lifecycle": "./src/lifecycle.ts",
     "./paths": "./src/paths.ts",

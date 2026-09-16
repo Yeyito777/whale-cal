@@ -31,4 +31,9 @@ if [[ -z "$BUN" || ! -x "$BUN" ]]; then
   exit 1
 fi
 
+# A remote-default installation is only a client. Invalid profile configuration
+# fails rather than accidentally starting a local calendar as a fallback.
+MODE="$("$BUN" -e 'const { connectionProfile } = await import(process.argv[1]); console.log(connectionProfile().url ? "remote" : "local")' "$ROOT/shared/src/connections.ts")"
+[[ "$MODE" == "remote" ]] && exit 0
+[[ "$MODE" == "local" ]] || { echo "Invalid calendar connection mode" >&2; exit 1; }
 exec "$BUN" run "$ROOT/scripts/supervise-daemon.ts"

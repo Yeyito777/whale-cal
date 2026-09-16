@@ -17,6 +17,7 @@ export type CommandAction =
   | { type: "ssh_status" }
   | { type: "ssh_connect"; alias: string }
   | { type: "ssh_cancel" }
+  | { type: "profile_connect"; name: string }
   | { type: "reload" }
   | { type: "calendar_new"; name: string; color?: string }
   | { type: "calendar_toggle"; name: string }
@@ -34,6 +35,7 @@ export const COMMANDS = [
   ["/delete", "delete selected event"], ["/search", "find an event"], ["/calendar", "new/toggle calendars"],
   ["/done", "mark selected event done"], ["/undone", "mark selected event unfinished"],
   ["/group", "organize calendars into groups"],
+  ["/connect", "connect to a named calendar profile"],
   ["/ssh", "route through a remote cald"], ["/reload", "reload canonical state"], ["/quit", "leave the TUI"],
 ] as const;
 
@@ -74,6 +76,9 @@ export function runCommand(text: string, state: AppState): CommandAction {
       if (!args[0]) return { type: "ssh_status" };
       if (args.length > 1) return { type: "error", message: "Usage: /ssh [alias|cancel]" };
       return args[0]!.toLowerCase() === "cancel" ? { type: "ssh_cancel" } : { type: "ssh_connect", alias: args[0]! };
+    case "/connect":
+      return args.length === 1 ? { type: "profile_connect", name: args[0]! }
+        : { type: "error", message: "Usage: /connect PROFILE (or /connect local)" };
     case "/group": {
       const operation = args.shift()?.toLowerCase();
       const value = args.join(" ").trim();

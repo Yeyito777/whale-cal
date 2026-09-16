@@ -16,6 +16,11 @@ config/data/*
 config/runtime/*
 !config/runtime/.gitkeep
 config/config.json
+config/connections.json
+config/credentials/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
 *.log
 *.pid
 *.sock

@@ -1,6 +1,8 @@
 import { connect, type Socket } from "node:net";
+import { randomUUID } from "node:crypto";
 import { socketPath } from "@whale-cal/shared/paths";
 import type { Command, Event } from "@whale-cal/shared/protocol";
+import { connectionProfile, httpRequest } from "@whale-cal/shared/connections";
 
 const RESPONSE_TYPES: Partial<Record<Command["type"], Event["type"]>> = {
   probe: "pong",
@@ -26,7 +28,13 @@ function hasRequestId(value: object): value is { reqId: string } {
 }
 
 function requestPayload(command: Command | Record<string, unknown>, payload: string, timeoutMs = 5_000): Promise<Event> {
+  const profile = connectionProfile();
+  if (profile.url) return httpRequest(profile, command, timeoutMs).then(event => {
+    if (event.type === "error") throw new CalConnectionError(event.message);
+    return event;
+  });
   return new Promise((resolve, reject) => {
+    const authId = `cal-auth-${randomUUID()}`;
     let socket: Socket | null = null;
     let buffer = "";
     let settled = false;
@@ -45,9 +53,12 @@ function requestPayload(command: Command | Record<string, unknown>, payload: str
     };
 
     const timer = setTimeout(() => finish(new CalConnectionError(`cald did not respond within ${timeoutMs}ms.`)), timeoutMs);
-    socket = connect(socketPath());
+    socket = connect(profile.socket ?? socketPath());
     socket.setNoDelay(true);
-    socket.once("connect", () => socket!.write(payload));
+    socket.once("connect", () => {
+      if (profile.token) socket!.write(JSON.stringify({ type: "authenticate", reqId: authId, token: profile.token }) + "\n");
+      socket!.write(payload);
+    });
     socket.on("data", chunk => {
       buffer += chunk.toString("utf8");
       let newline: number;
@@ -59,6 +70,10 @@ function requestPayload(command: Command | Record<string, unknown>, payload: str
         try { event = JSON.parse(line) as Event; }
         catch { finish(new CalConnectionError("cald returned malformed JSON.")); return; }
         const eventRequestId = "reqId" in event ? event.reqId : undefined;
+        if (eventRequestId === authId) {
+          if (event.type === "error") finish(new CalConnectionError(event.message));
+          continue;
+        }
         if (event.type === "error" && (!requestId || !event.reqId || event.reqId === requestId)) {
           finish(new CalConnectionError(event.message));
           return;

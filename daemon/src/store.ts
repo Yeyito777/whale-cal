@@ -1,10 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { join, dirname } from "node:path";
 import { randomUUID } from "node:crypto";
 import { eventIsCompleted, isDateKey, isTimeKey, occurrencesOnDate } from "@whale-cal/shared/dates";
 import type { Calendar, CalendarGroup, CalendarPatch, CalendarDatabase, CalendarEvent, EventDraft, EventPatch, RecurrenceRule } from "@whale-cal/shared/types";
 import { databasePath } from "@whale-cal/shared/paths";
-import { log } from "./log";
+import { CalendarPersistence, initialTimeZone } from "./persistence";
 import { CALENDAR_COLORS, nextCalendarColor } from "./calendar-colors";
 
 function nowIso(): string { return new Date().toISOString(); }
@@ -14,6 +13,7 @@ function defaultDatabase(): CalendarDatabase {
   return {
     version: 1,
     revision: 0,
+    timeZone: initialTimeZone(),
     calendars: [{ id: randomUUID(), name: "Personal", color: CALENDAR_COLORS[0], visible: true, createdAt: now, updatedAt: now }],
     events: [],
   };
@@ -50,50 +50,29 @@ function cleanRecurrence(value: RecurrenceRule | undefined): RecurrenceRule | un
   };
 }
 
-function looksLikeDatabase(value: unknown): value is CalendarDatabase {
-  if (!value || typeof value !== "object") return false;
-  const db = value as Partial<CalendarDatabase>;
-  return db.version === 1 && Number.isInteger(db.revision) && Array.isArray(db.calendars) && Array.isArray(db.events);
-}
-
 export class CalendarStore {
   private db: CalendarDatabase;
+  readonly persistence: CalendarPersistence;
+  private actor = "local";
 
   constructor(private readonly path = databasePath()) {
-    this.db = this.load();
+    this.persistence = new CalendarPersistence(path);
+    try { this.db = this.persistence.load(defaultDatabase, path.endsWith(".json") ? path : join(dirname(path), "calendar.json")); }
+    catch (error) { this.persistence.close(); throw error; }
   }
 
-  private load(): CalendarDatabase {
-    if (!existsSync(this.path)) {
-      const initial = defaultDatabase();
-      this.write(initial);
-      return initial;
-    }
-    try {
-      const parsed: unknown = JSON.parse(readFileSync(this.path, "utf8"));
-      if (!looksLikeDatabase(parsed)) throw new Error("unsupported or malformed database structure");
-      if (parsed.calendars.length === 0) throw new Error("database has no calendars");
-      return parsed;
-    } catch (error) {
-      const backup = `${this.path}.corrupt-${Date.now()}`;
-      try { renameSync(this.path, backup); } catch { /* best effort */ }
-      log("error", `store: moved unreadable database to ${backup}: ${error instanceof Error ? error.message : String(error)}`);
-      const initial = defaultDatabase();
-      this.write(initial);
-      return initial;
-    }
-  }
-
-  private write(db: CalendarDatabase): void {
-    mkdirSync(dirname(this.path), { recursive: true });
-    const temp = `${this.path}.${process.pid}.${randomUUID()}.tmp`;
-    writeFileSync(temp, JSON.stringify(db, null, 2) + "\n", { mode: 0o600 });
-    renameSync(temp, this.path);
+  /** Synchronous operations, authorization and deduplication commit together. */
+  transaction<T>(actor: string, operation: () => T): T {
+    const before = this.snapshot(), previousActor = this.actor;
+    this.actor = actor;
+    try { return this.persistence.sql.transaction(operation)(); }
+    catch (error) { this.db = before; throw error; }
+    finally { this.actor = previousActor; }
   }
 
   private commit(): void {
     this.db.revision++;
-    this.write(this.db);
+    this.persistence.write(this.db);
   }
 
   snapshot(): CalendarDatabase {
@@ -101,7 +80,8 @@ export class CalendarStore {
   }
 
   private calendar(id: string | undefined): Calendar {
-    const calendar = id ? this.db.calendars.find(item => item.id === id) : this.db.calendars[0];
+    const calendar = id ? this.db.calendars.find(item => item.id === id)
+      : this.db.calendars.find(item => (item.ownerUserId ?? "local") === this.actor);
     if (!calendar) throw new Error("Calendar not found.");
     return calendar;
   }
@@ -201,13 +181,13 @@ export class CalendarStore {
   createCalendar(nameValue: string, colorValue?: string, groupId?: string): Calendar {
     if (groupId !== undefined) this.group(groupId);
     const name = cleanText(nameValue, "Calendar name", 100, true)!;
-    if (this.db.calendars.some(item => item.name.toLowerCase() === name.toLowerCase())) {
+    if (this.db.calendars.some(item => (item.ownerUserId ?? "local") === this.actor && item.name.toLowerCase() === name.toLowerCase())) {
       throw new Error("A calendar with that name already exists.");
     }
     const color = colorValue?.trim() || nextCalendarColor(this.db.calendars.map(calendar => calendar.color));
     if (!/^#[0-9a-f]{6}$/i.test(color)) throw new Error("Calendar color must be #rrggbb.");
     const now = nowIso();
-    const calendar: Calendar = { id: randomUUID(), name, color, visible: true, createdAt: now, updatedAt: now, ...(groupId !== undefined ? { groupId } : {}) };
+    const calendar: Calendar = { id: randomUUID(), ownerUserId: this.actor, name, color, visible: true, createdAt: now, updatedAt: now, ...(groupId !== undefined ? { groupId } : {}) };
     this.db.calendars.push(calendar);
     this.commit();
     return structuredClone(calendar);
@@ -248,13 +228,13 @@ export class CalendarStore {
 
   private groupName(value: string, exceptId?: string): string {
     const name = cleanText(value, "Group name", 100, true)!;
-    if (this.db.groups?.some(group => group.id !== exceptId && group.name.toLowerCase() === name.toLowerCase())) throw new Error("A group with that name already exists.");
+    if (this.db.groups?.some(group => group.id !== exceptId && (group.ownerUserId ?? "local") === this.actor && group.name.toLowerCase() === name.toLowerCase())) throw new Error("A group with that name already exists.");
     return name;
   }
 
   createGroup(value: string): CalendarGroup {
     const name = this.groupName(value), now = nowIso();
-    const group = { id: randomUUID(), name, createdAt: now, updatedAt: now };
+    const group = { id: randomUUID(), ownerUserId: this.actor, name, createdAt: now, updatedAt: now };
     (this.db.groups ??= []).push(group); this.commit();
     return structuredClone(group);
   }
@@ -274,4 +254,20 @@ export class CalendarStore {
   }
 
   get revision(): number { return this.db.revision; }
+
+  /** Explicit administrator migration operation; normal patches cannot change ownership. */
+  assignOwner(target: "calendar" | "group", id: string, userId: string): void {
+    if (target === "group") {
+      this.group(id).ownerUserId = userId;
+      this.group(id).updatedAt = nowIso();
+      for (const calendar of this.db.calendars.filter(c => c.groupId === id)) {
+        calendar.ownerUserId = userId; calendar.updatedAt = nowIso();
+      }
+    } else {
+      const calendar = this.calendar(id);
+      calendar.ownerUserId = userId; calendar.updatedAt = nowIso();
+      if (calendar.groupId && this.group(calendar.groupId).ownerUserId !== userId) delete calendar.groupId;
+    }
+    this.commit();
+  }
 }
