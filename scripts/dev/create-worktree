@@ -18,12 +18,14 @@ validate_worktree_name "$NAME"
 
 WORKTREE_DIR="$WHALE_CAL_WORKTREES_DIR/$NAME"
 
-[[ ! -e "$WORKTREE_DIR" ]] || worktree_die "Already exists: $WORKTREE_DIR"
+[[ ! -e "$WORKTREE_DIR" && ! -L "$WORKTREE_DIR" ]] || worktree_die "Already exists: $WORKTREE_DIR"
+INSTANCE_CONFIG="$(worktree_instance_config_dir "$WORKTREE_DIR")"
+[[ ! -e "$INSTANCE_CONFIG" && ! -L "$INSTANCE_CONFIG" ]] || worktree_die "Existing test config: $INSTANCE_CONFIG. Clean the old worktree first."
 if git -C "$WHALE_CAL_ROOT" show-ref --verify --quiet "refs/heads/$NAME"; then
   worktree_die "Branch already exists: $NAME"
 fi
 
-ROLLBACK=1
+ROLLBACK=0
 rollback_create() {
   local status=$?
   trap - EXIT
@@ -40,6 +42,7 @@ trap rollback_create EXIT
 mkdir -p "$WHALE_CAL_WORKTREES_DIR"
 WHALE_CAL_SKIP_POST_CHECKOUT_INSTALL=1 \
   git -C "$WHALE_CAL_ROOT" worktree add "$WORKTREE_DIR" -b "$NAME" HEAD
+ROLLBACK=1
 
 sync_dependency_artifacts "$WORKTREE_DIR"
 sync_isolated_config "$WORKTREE_DIR"

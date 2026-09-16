@@ -452,6 +452,7 @@ from the main calendar:
 git config core.hooksPath .githooks   # once per clone
 ./scripts/dev/create-worktree fix-agenda-scroll
 ./scripts/dev/caltest fix-agenda-scroll
+./scripts/dev/caltest fix-agenda-scroll --check  # daemon probe + typecheck + tests, no TUI
 ./scripts/dev/clean-worktree fix-agenda-scroll
 ```
 
@@ -460,6 +461,17 @@ initially empty calendar under `config/worktrees/<name>/`, launches its TUI, and
 stops the daemon when the TUI exits. It copies only the main checkout's UI
 preferences. `clean-worktree` refuses to remove a dirty/in-use worktree or delete
 an unmerged branch.
+
+Scripts also accept `.worktrees/<name>` or the absolute worktree path, and can
+be invoked from a worktree's copy (resources still resolve to the main checkout).
+Creation branches from the main checkout's committed `HEAD`, not uncommitted
+edits. The tracked `bun.lock` is used; workspace links point into the worktree,
+while Bun's package cache is shared. No calendar data or secrets are copied.
+An already-running test daemon is reused and left running; only a daemon started
+by `caltest` is stopped on exit. Merge your branch before cleaning it.
+For direct CLI use, set `CAL_CONFIG_DIR` to the absolute
+`<main-checkout>/config/worktrees/<name>` path; ordinary `bun run start` instead
+uses the worktree's own `config/` unless that variable is set.
 
 ## License
 

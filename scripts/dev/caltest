@@ -2,7 +2,8 @@
 # caltest — launch an isolated worktree daemon and TUI, then clean up the daemon.
 #
 # Usage:
-#   caltest <worktree-name|path>
+#   caltest <worktree-name|path> [--check]
+# --check probes the isolated daemon and runs typechecking/tests without a TUI.
 
 set -euo pipefail
 
@@ -11,13 +12,16 @@ SCRIPT_DIR="$(cd -P -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/worktree-common.sh"
 
 command -v bun >/dev/null 2>&1 || worktree_die "bun is required."
-[[ $# -eq 1 ]] || worktree_die "Usage: caltest <worktree-name|path>"
+[[ $# -eq 1 || ( $# -eq 2 && "$2" == "--check" ) ]] || worktree_die "Usage: caltest <worktree-name|path> [--check]"
+CHECK_ONLY="${2:-}"
 
 WORKTREE_DIR="$(resolve_worktree_dir "$1")"
 [[ -d "$WORKTREE_DIR" ]] || worktree_die "Not found: $WORKTREE_DIR"
 [[ -f "$WORKTREE_DIR/package.json" ]] || worktree_die "No package.json in $WORKTREE_DIR"
 [[ -d "$WORKTREE_DIR/daemon" ]] || worktree_die "No daemon/ in $WORKTREE_DIR"
 [[ -d "$WORKTREE_DIR/tui" ]] || worktree_die "No tui/ in $WORKTREE_DIR"
+git -C "$WHALE_CAL_ROOT" worktree list --porcelain | grep -Fqx "worktree $WORKTREE_DIR" \
+  || worktree_die "Not a registered worktree: $WORKTREE_DIR"
 
 WT_NAME="$(basename "$WORKTREE_DIR")"
 
@@ -37,9 +41,14 @@ PID_FILE="$RUNTIME_DIR/cald.pid"
 SUPERVISOR_LOG="$RUNTIME_DIR/caltest-supervisor.log"
 SOCKET="$(cd "$WORKTREE_DIR" && bun -e 'import { socketPath } from "./shared/src/paths"; process.stdout.write(socketPath())')"
 SUPERVISOR_PID=""
+CLIENT_PID=""
 OWNS_DAEMON=0
 
 cleanup() {
+  if [[ -n "$CLIENT_PID" ]] && kill -0 "$CLIENT_PID" 2>/dev/null; then
+    kill "$CLIENT_PID" 2>/dev/null || true
+    wait "$CLIENT_PID" 2>/dev/null || true
+  fi
   if [[ $OWNS_DAEMON -eq 1 && -n "$SUPERVISOR_PID" ]] && kill -0 "$SUPERVISOR_PID" 2>/dev/null; then
     kill "$SUPERVISOR_PID" 2>/dev/null || true
     wait "$SUPERVISOR_PID" 2>/dev/null || true
@@ -49,6 +58,9 @@ cleanup() {
   fi
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+trap 'exit 129' HUP
 
 daemon_ready() {
   (cd "$WORKTREE_DIR" && bun run daemon/src/main.ts status >/dev/null 2>&1)
@@ -89,4 +101,12 @@ fi
 
 printf '  Config: %s\n\n' "$CAL_CONFIG_DIR"
 
-(cd "$WORKTREE_DIR" && bun run tui)
+if [[ "$CHECK_ONLY" == "--check" ]]; then
+  (cd "$WORKTREE_DIR" && bun run cli/src/main.ts status --json && bun run check) &
+else
+  # Explicit stdin redirection keeps terminal input available to this async job.
+  (cd "$WORKTREE_DIR" && exec bun run tui/src/main.ts) <&0 &
+fi
+CLIENT_PID=$!
+wait "$CLIENT_PID"
+CLIENT_PID=""

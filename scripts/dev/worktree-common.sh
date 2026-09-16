@@ -17,6 +17,10 @@ worktree_die() {
   exit 1
 }
 
+# Never follow a redirected managed root when installing or deleting resources.
+[[ ! -L "$WHALE_CAL_WORKTREES_DIR" ]] || worktree_die ".worktrees must not be a symlink."
+[[ ! -L "$WHALE_CAL_ROOT/config" && ! -L "$WHALE_CAL_ROOT/config/worktrees" ]] || worktree_die "Managed config directories must not be symlinks."
+
 validate_worktree_name() {
   local name="${1:-}"
 
@@ -55,6 +59,7 @@ resolve_worktree_dir() {
 
   [[ "$name" != */* ]] || worktree_die "Worktrees must be direct children of $WHALE_CAL_WORKTREES_DIR"
   validate_worktree_name "$name"
+  [[ ! -L "$candidate" ]] || worktree_die "Refusing a symlinked worktree: $candidate"
   printf '%s\n' "$candidate"
 }
 
@@ -62,6 +67,7 @@ worktree_instance_config_dir() {
   local worktree_dir="$1"
   local name=""
   name="$(basename "$worktree_dir")"
+  [[ ! -L "$WHALE_CAL_ROOT/config/worktrees/$name" ]] || worktree_die "Refusing symlinked instance config: $name"
   printf '%s\n' "$WHALE_CAL_ROOT/config/worktrees/$name"
 }
 

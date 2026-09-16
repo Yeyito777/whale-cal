@@ -22,10 +22,10 @@ REGISTERED=0
 registered_worktree_branch() {
   local worktree_dir="$1"
   git -C "$WHALE_CAL_ROOT" worktree list --porcelain | awk -v target="$worktree_dir" '
-    $1 == "worktree" { in_target = ($2 == target); next }
-    in_target && $1 == "branch" {
-      sub(/^refs\/heads\//, "", $2)
-      print $2
+    /^worktree / { in_target = (substr($0, 10) == target); next }
+    in_target && /^branch refs\/heads\// {
+      sub(/^branch refs\/heads\//, "")
+      print
       exit
     }
   '
@@ -59,6 +59,12 @@ if git -C "$WHALE_CAL_ROOT" worktree list --porcelain | grep -Fqx "worktree $WOR
   BRANCH="$(registered_worktree_branch "$WORKTREE_DIR")"
 fi
 
+MAIN_BRANCH="$(git -C "$WHALE_CAL_ROOT" branch --show-current 2>/dev/null || true)"
+if [[ -z "$BRANCH" && $REGISTERED -eq 0 && "$WT_NAME" != "$MAIN_BRANCH" ]] && \
+   git -C "$WHALE_CAL_ROOT" show-ref --verify --quiet "refs/heads/$WT_NAME"; then
+  BRANCH="$WT_NAME"
+fi
+
 if [[ -n "$BRANCH" ]] && git -C "$WHALE_CAL_ROOT" show-ref --verify --quiet "refs/heads/$BRANCH" && \
    ! git -C "$WHALE_CAL_ROOT" merge-base --is-ancestor "$BRANCH" HEAD; then
   worktree_die "Branch $BRANCH contains work that is not merged into $(git -C "$WHALE_CAL_ROOT" branch --show-current). Merge it first, or remove the worktree and branch manually if you intend to discard it."
@@ -80,12 +86,6 @@ fi
 
 if [[ $REGISTERED -eq 1 ]]; then
   git -C "$WHALE_CAL_ROOT" worktree remove "$WORKTREE_DIR"
-fi
-
-MAIN_BRANCH="$(git -C "$WHALE_CAL_ROOT" branch --show-current 2>/dev/null || true)"
-if [[ -z "$BRANCH" && "$WT_NAME" != "$MAIN_BRANCH" ]] && \
-   git -C "$WHALE_CAL_ROOT" show-ref --verify --quiet "refs/heads/$WT_NAME"; then
-  BRANCH="$WT_NAME"
 fi
 
 if [[ -n "$BRANCH" ]] && git -C "$WHALE_CAL_ROOT" show-ref --verify --quiet "refs/heads/$BRANCH"; then

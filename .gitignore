@@ -2,6 +2,8 @@
 node_modules/
 dist/
 coverage/
+.tmp/
+tmp/
 *.tsbuildinfo
 
 # Managed development worktrees and their isolated calendar instances
