@@ -38,14 +38,13 @@ export function focusCalendar(state: AppState): void {
 }
 
 export function focusSidebar(state: AppState): void {
-  // The sidebar is hidden at compact widths: never focus an invisible panel.
-  if (state.cols < 76 || !state.sidebarOpen) return;
+  if (!state.sidebarOpen) return;
   leaveInput(state);
   state.focus = "sidebar";
 }
 
 export function cyclePanelFocus(state: AppState): void {
-  if (!state.sidebarOpen || state.cols < 76) return;
+  if (!state.sidebarOpen) return;
   if (state.focus === "sidebar") state.focus = "calendar";
   else focusSidebar(state);
 }

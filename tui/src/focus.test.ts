@@ -83,13 +83,35 @@ describe("Exocortex-style focus", () => {
     }
   });
 
-  test("compact terminals and resize never leave invisible sidebar focused", () => {
-    const s = fixture(); focusPrompt(s, "draft");
-    handleFocusKey(s, { type: "ctrl-s" });
-    s.cols = 60; buildFrame(s);
-    expect(isPromptFocused(s)).toBe(true);
-    cyclePanelFocus(s);
-    expect(isPromptFocused(s)).toBe(true);
+  test("sidebar opens and cycles focus at any width, preserving the prompt across resize", () => {
+    for (const cols of [1, 8, 32, 50, 60, 75, 76, 120]) {
+      const s = fixture(); s.cols = cols; focusPrompt(s, "draft");
+      s.database.calendars = [{ id: "personal", name: "Personal", color: "#1d9bf0", visible: true, createdAt: "", updatedAt: "" }];
+      handleFocusKey(s, { type: "ctrl-s" });
+      buildFrame(s);
+      expect(s.focus).toBe("sidebar");
+      expect(s.layout.sidebarWidth).toBeGreaterThan(0);
+      expect(s.layout.sidebarWidth).toBeLessThanOrEqual(cols);
+      expect(s.prompt!.text).toBe("draft");
+      expect(s.layout.calendarRows.some(hit => hit.calendarId === "personal")).toBe(true);
+      cyclePanelFocus(s);
+      expect(isPromptFocused(s)).toBe(true);
+      cyclePanelFocus(s);
+      expect(s.focus).toBe("sidebar");
+      s.cols = 40; buildFrame(s);
+      expect(s.focus).toBe("sidebar");
+      expect(s.layout.sidebarWidth).toBeGreaterThan(0);
+      handleFocusKey(s, { type: "ctrl-s" }); buildFrame(s);
+      expect(s.layout.sidebarWidth).toBe(0);
+      expect(isPromptFocused(s)).toBe(true);
+    }
+  });
+
+  test("short sidebars don't publish calendar hits over the prompt or footer", () => {
+    const s = fixture(); s.cols = 40; s.rows = 8; s.sidebarOpen = true;
+    s.database.calendars = [{ id: "personal", name: "Personal", color: "#1d9bf0", visible: true, createdAt: "", updatedAt: "" }];
+    buildFrame(s);
+    expect(s.layout.calendarRows).toEqual([]);
   });
 
   test("new-event shortcuts do not erase the prompt or navigate dates", () => {

@@ -30,7 +30,7 @@ export function renderDeadlines(state: AppState, columns: number, height: number
   const marked = state.deadlineMarkedKeys.length;
   const done = selected && eventIsCompleted(selected.event, selected.startDate);
   controls(1, marked
-    ? [["Done", "deadline-done"], ["Reopen", "deadline-reopen"], ["Mark", "deadline-mark"], ["Clear", "deadline-clear"], [`${marked} marked`, ""]]
+    ? [[`${marked} marked`, ""], ["Done", "deadline-done"], ["Reopen", "deadline-reopen"], ["Clear", "deadline-clear"], ["Mark", "deadline-mark"]]
     : [[done ? "Reopen" : "Done", done ? "deadline-reopen" : "deadline-done"], ["Mark", "deadline-mark"], ["Mark all", "deadline-mark-all"]]);
   rows[2] = styled(`${theme.borderUnfocused} ${"─".repeat(Math.max(0, listWidth - 3))}  `, listWidth);
   const bodyTop = 3, body = Math.max(0, height - bodyTop - 1);

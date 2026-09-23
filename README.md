@@ -78,7 +78,8 @@ current GUI launchd domain when available and starts automatically at login.
 The calendar starts full-width with the optional sidebar closed.
 There is no minimum terminal size: the UI renders as much
 as fits, clipping overflowing content and controls rather than showing a resize
-screen. The sidebar remains optional and hides at narrow widths.
+screen. The sidebar remains optional and can be opened at any width; it shrinks
+to fit rather than disappearing in narrow windows.
 
 `Ctrl+S` opens the calendar filters, and that preference is remembered. Showing/hiding a calendar
 with the sidebar or `/calendar toggle NAME` is entirely local: no daemon command,

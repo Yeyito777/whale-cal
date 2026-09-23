@@ -97,7 +97,7 @@ function renderSidebar(state: AppState, height: number, target: number): string[
   const capacity = Math.max(1, height - 3);
   const items = calendarSidebarRows(state), selection = selectedSidebarIndex(state, items);
   const start = Math.max(0, Math.min(selection - Math.floor(capacity / 2), items.length - capacity));
-  for (let i = start; i < Math.min(items.length, start + capacity); i++) {
+  for (let i = start; i < Math.min(items.length, start + capacity) && 3 + i - start < height; i++) {
     const item = items[i]!;
     const selected = i === selection && state.focus === "sidebar";
     if (item.kind === "group") {
@@ -468,13 +468,13 @@ function renderCompletion(state: AppState, rows: string[]): void {
 }
 
 export function buildFrame(state: AppState): { rows: string[]; cursor: string } {
-  if (state.focus === "sidebar" && (!state.sidebarOpen || state.cols < 76)) state.focus = "calendar";
+  if (state.focus === "sidebar" && !state.sidebarOpen) state.focus = "calendar";
   const rows = Array.from({ length: state.rows }, () => segment("", state.cols));
   rows[0] = renderTopbar(state);
   const footerTop = Math.max(3, state.rows - STATUSLINE_HEIGHT - 2);
   const bodyTop = 3;
   const bodyHeight = Math.max(0, footerTop - bodyTop);
-  const sidebarWidth = state.sidebarOpen && state.cols >= 76 ? Math.min(31, Math.floor(state.cols * 0.32)) : 0;
+  const sidebarWidth = state.sidebarOpen ? Math.min(31, Math.max(1, Math.floor(state.cols * 0.32))) : 0;
   const mainWidth = state.cols - sidebarWidth;
   state.layout = { sidebarWidth, calendarRows: [], monthCells: [], mainLeft: sidebarWidth + 1, bodyTop, bodyBottom: footerTop - 1, actions: [], eventRows: [], editorFields: [] };
   rows[1] = renderToolbar(state);
