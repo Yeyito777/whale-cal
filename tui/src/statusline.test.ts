@@ -107,3 +107,16 @@ test("countdown follows local wall-time timestamps over DST changes", () => {
   const meeting = event({ startDate: "2027-03-14", startTime: "03:30" });
   expect(nextEvent([meeting], before)!.timestamp - before).toBe(new Date("2027-03-14T03:30:00").getTime() - before);
 });
+
+test("yearly date-only deadlines don't crash the next-deadline search", () => {
+  // The search probes occurrence indexes up to 100000; for a yearly rule that is
+  // tens of thousands of years out, past the 4-digit dates deadlines are parsed from.
+  const yearly = event({ kind: "deadline", startTime: undefined, startDate: "2027-03-31", endDate: "2027-03-31", recurrence: { frequency: "yearly", interval: 1 } });
+  expect(nextDeadline([yearly], now)!.date).toBe("2027-03-31");
+  const started = event({ ...yearly, startDate: "2020-06-30", endDate: "2020-06-30" });
+  expect(nextDeadline([started], now)!.date).toBe("2027-06-30");
+  const state = createState();
+  state.connected = true;
+  state.database.events = [yearly];
+  expect(() => renderStatusline(state, now)).not.toThrow();
+});

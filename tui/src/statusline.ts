@@ -21,6 +21,20 @@ function startsAt(event: CalendarEvent, date: string): number {
   return new Date(`${date}T${event.startTime ?? "00:00"}:00`).getTime();
 }
 
+/**
+ * When occurrence `index` starts. Occurrences past the representable calendar
+ * (5-digit years, which the search below probes for open-ended yearly rules)
+ * count as never: Infinity, not an exception that takes down the render.
+ */
+function occurrenceStartsAt(event: CalendarEvent, index: number): number {
+  try {
+    const timestamp = startsAt(event, occurrenceDate(event, index));
+    return Number.isNaN(timestamp) ? Number.POSITIVE_INFINITY : timestamp;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
+}
+
 export interface NextEvent { event: CalendarEvent; date: string; timestamp: number }
 function nextItem(events: readonly CalendarEvent[], now: number): NextEvent | null {
   let next: NextEvent | null = null;
@@ -30,7 +44,7 @@ function nextItem(events: readonly CalendarEvent[], now: number): NextEvent | nu
     // Find the first future occurrence without expanding years of past instances.
     while (low < high) {
       const middle = Math.floor((low + high) / 2);
-      if (startsAt(event, occurrenceDate(event, middle)) < now) low = middle + 1;
+      if (occurrenceStartsAt(event, middle) < now) low = middle + 1;
       else high = middle;
     }
     const completedDates = new Set(event.completedDates ?? []);
@@ -38,7 +52,7 @@ function nextItem(events: readonly CalendarEvent[], now: number): NextEvent | nu
     if (low >= count) continue;
     const date = occurrenceDate(event, low);
     if (event.recurrence?.until && date > event.recurrence.until) continue;
-    const timestamp = startsAt(event, date);
+    const timestamp = occurrenceStartsAt(event, low);
     if (!Number.isFinite(timestamp) || timestamp < now) continue;
     if (!next || timestamp < next.timestamp || timestamp === next.timestamp && event.title.localeCompare(next.event.title) < 0) next = { event, date, timestamp };
   }
