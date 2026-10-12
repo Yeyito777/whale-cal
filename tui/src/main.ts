@@ -1,3 +1,6 @@
+import { appendFileSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
+import { runtimeDir } from "@whale-cal/shared/paths";
 import { handleDeadlineScroll } from "./deadline-scroll";
 import { handleViewNavigation } from "./view-navigation";
 import { deadlineKey, type DeadlineFilter } from "./deadline-list";
@@ -780,6 +783,25 @@ async function main(): Promise<void> {
   render(state);
 }
 
+/** Log uncaught errors outside the alternate screen, which would otherwise erase them on exit. */
+function crash(error: unknown): void {
+  const message = error instanceof Error ? error.message : String(error);
+  const detail = error instanceof Error ? error.stack ?? message : message;
+  const logPath = join(runtimeDir(), "tui-crash.log");
+  let logged = false;
+  try {
+    mkdirSync(runtimeDir(), { recursive: true });
+    const route = state.remoteAlias ? `ssh:${state.remoteAlias}` : "local";
+    appendFileSync(logPath, `${new Date().toISOString()} route=${route} view=${state.view} size=${state.cols}x${state.rows}\n${detail}\n\n`);
+    logged = true;
+  } catch { /* still restore the terminal and report */ }
+  restoreTerminal();
+  console.error(`\n  ✗ Whale Cal crashed: ${message}${logged ? `\n    details: ${logPath}` : ""}\n`);
+  process.exit(1);
+}
+
+process.on("uncaughtException", crash);
+process.on("unhandledRejection", crash);
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(signal, cleanup);
 process.on("exit", () => { try { savePreferences(state); } catch {} restoreTerminal(); });
 
