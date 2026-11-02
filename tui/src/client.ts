@@ -115,7 +115,10 @@ export class DaemonClient {
   private switchInProgress = false;
   private disconnectHandler: (() => void) | null = null;
 
-  constructor(private readonly handler: (event: ClientEvent) => void, private readonly path = socketPath()) {}
+  /** `alias` starts the client on that SSH route instead of the local daemon. */
+  constructor(private readonly handler: (event: ClientEvent) => void, private readonly path = socketPath(), alias: string | null = null) {
+    this.alias = alias;
+  }
 
   get connected(): boolean { return !!this.wire; }
   get remoteAlias(): string | null { return this.alias; }
@@ -196,7 +199,7 @@ export class DaemonClient {
     const error = validateSshAlias(alias);
     if (error) { this.routeError(error); return; }
     if (this.switchInProgress) { this.routeError("A route switch is already in progress."); return; }
-    if (alias === this.alias) { this.status(false); return; }
+    if (alias === this.alias && this.wire) { this.status(false); return; }
     this.switchInProgress = true;
     this.handler({ type: "route_status", mode: this.alias ? "remote" : "local", state: "switching", ...(this.alias ? { alias: this.alias } : {}), switched: false, message: `Connecting through SSH alias ${alias}…` });
     try {
@@ -209,7 +212,7 @@ export class DaemonClient {
 
   async useLocal(): Promise<void> {
     if (this.switchInProgress) { this.routeError("A route switch is already in progress."); return; }
-    if (!this.alias) { this.status(false); return; }
+    if (!this.alias && this.wire) { this.status(false); return; }
     this.switchInProgress = true;
     try {
       const result = await probe(localWire(this.path), 3_000);

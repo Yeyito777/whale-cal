@@ -17,6 +17,7 @@ import { STATUSLINE_HEIGHT } from "./statusline";
 import { cycleCompletion } from "./completion";
 import { invalidateFrame } from "./frame";
 import { InputBuffer, parseInput, type KeyEvent, type MouseEvent } from "./input";
+import { LAUNCH_USAGE, parseLaunchArgs } from "./launch-args";
 import { loadPreferences, savePreferences } from "./preferences";
 import { render } from "./render";
 import {
@@ -759,11 +760,25 @@ function cleanup(): void {
   process.exit(0);
 }
 
+/** Open an --ssh launch on its remote route, retrying in place: a closed window would hide why it failed. */
+async function connectOnLaunch(alias: string): Promise<void> {
+  state.remoteAlias = alias;
+  setNotice(state, `Connecting through SSH alias ${alias}…`);
+  try { await client.connect(); }
+  catch (error) {
+    notice(`Could not connect through ${alias}: ${error instanceof Error ? error.message : String(error)}`, "error");
+    scheduleReconnect();
+  }
+}
+
 async function main(): Promise<void> {
+  const launch = parseLaunchArgs(process.argv.slice(2));
+  if (launch.showHelp) { console.log(LAUNCH_USAGE); process.exit(0); }
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error("Whale Cal requires an interactive terminal.");
-  client = new DaemonClient(onClientEvent);
+  client = new DaemonClient(onClientEvent, undefined, launch.sshAlias);
   client.onDisconnect(scheduleReconnect);
-  await client.connect();
+  // The launcher guarantees the local daemon; a remote one connects after the TUI is up.
+  if (!launch.sshAlias) await client.connect();
   setupTerminal();
   const inputBuffer = new InputBuffer();
   process.stdin.on("data", (chunk: Buffer) => {
@@ -780,6 +795,7 @@ async function main(): Promise<void> {
     invalidateFrame();
     scheduleRender(true);
   });
+  if (launch.sshAlias) void connectOnLaunch(launch.sshAlias);
   render(state);
 }
 

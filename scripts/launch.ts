@@ -3,6 +3,7 @@ import { connect } from "node:net";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { isWindows, socketPath } from "../shared/src/paths";
+import { LAUNCH_USAGE, parseLaunchArgs, type LaunchOptions } from "../tui/src/launch-args";
 
 const root = resolve(import.meta.dir, "..");
 
@@ -44,7 +45,16 @@ async function ensureDaemon(): Promise<void> {
   throw new Error("cald did not become ready; inspect config/runtime/cald.log");
 }
 
-await ensureDaemon();
-const tui = spawn(process.execPath, [resolve(root, "tui/src/main.ts")], { stdio: "inherit", cwd: root });
+const args = process.argv.slice(2);
+let launch: LaunchOptions;
+try { launch = parseLaunchArgs(args); }
+catch (error) {
+  console.error(`whale-cal: ${error instanceof Error ? error.message : String(error)}\n\n${LAUNCH_USAGE}`);
+  process.exit(2);
+}
+if (launch.showHelp) { console.log(LAUNCH_USAGE); process.exit(0); }
+// An --ssh launch talks to the remote cald only, so it never needs a local one.
+if (!launch.sshAlias) await ensureDaemon();
+const tui = spawn(process.execPath, [resolve(root, "tui/src/main.ts"), ...args], { stdio: "inherit", cwd: root });
 tui.once("exit", code => process.exit(code ?? 0));
 tui.once("error", error => { console.error(error.message); process.exit(1); });

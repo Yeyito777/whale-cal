@@ -306,6 +306,10 @@ so local and remote TUI sessions can coexist. The transport executes
 `ssh -T -C my-host cald proxy`, which transparently bridges stdio to the remote
 daemon socket. `/ssh` with no argument reports the active route.
 
+To open directly on a remote route, launch with `whale-cal --ssh my-host`. That
+TUI comes up at once and keeps retrying until the host answers; it never starts
+a local daemon.
+
 For a two-machine test, install Whale Cal on both machines, run the daemon on
 the machine that should own the calendar, and define it as an SSH alias on the
 machine running the TUI:
