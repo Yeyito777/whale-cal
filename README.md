@@ -306,9 +306,46 @@ so local and remote TUI sessions can coexist. The transport executes
 `ssh -T -C my-host cald proxy`, which transparently bridges stdio to the remote
 daemon socket. `/ssh` with no argument reports the active route.
 
+While a switch connects, a progress view replaces the calendar until the remote
+calendar is in. `Esc` (or `/ssh cancel`) abandons it and keeps the current route;
+`Ctrl+C` quits. A failed switch reports why and also leaves the route unchanged.
+
 To open directly on a remote route, launch with `whale-cal --ssh my-host`. That
-TUI comes up at once and keeps retrying until the host answers; it never starts
-a local daemon.
+TUI opens on the progress view; if the switch fails or is cancelled it falls
+back to the local daemon, saying why.
+
+### Connection reuse
+
+A fresh OpenSSH connection spends several round trips (TCP, key exchange,
+authentication) before `cald proxy` starts. The TUI shares one connection per
+alias through a private OpenSSH ControlMaster, so a later launch, reconnect or
+second TUI skips the handshake. `--ssh` also starts SSH before the TUI's modules
+load, and a probe asks for the calendar in its first write.
+
+- **Where**: `config/runtime/ssh/<alias>.sock` (directory mode 0700). When that
+  path is too long for a Unix socket (macOS allows 104 bytes, and OpenSSH adds a
+  17-character temporary suffix) or contains spaces, a per-user directory
+  `whale-cal-ssh-<uid>/` (mode 0700, checked to be ours) under the system temp
+  dir or `/tmp` holds `<hash of runtime dir and alias>.sock` instead. If neither
+  can be made private, the TUI connects without reuse.
+- **Lifetime**: `ControlPersist=10m`: the shared connection stays up ten minutes
+  after its last session closes. The first session to find no live master
+  becomes one; it runs in the background, so closing the terminal doesn't end it.
+- **Options**: the master is always created by Whale Cal with its own options
+  (compression, `BatchMode`, `ServerAliveInterval=15`/`CountMax=3`); a master
+  from your own `~/.ssh/config` is never joined.
+- **Dead masters**: a master whose own connection died (a laptop that slept onto
+  another network) still accepts sessions that never answer until its keepalive
+  gives up. A probe through an existing master with no reply within 2.5 s starts
+  a second, unshared connection; the first to answer wins, and when the fresh
+  one wins the old master is told to exit.
+
+While a master runs, **any process running as the same local user** can open
+sessions to that host through its socket without authenticating again. Other
+users can't (the directory is private). Such a process could already use the
+same keys and agent, so this mainly skips re-authentication for the reuse
+window; a hardware key or agent confirmation is not asked for those sessions.
+To end it at once: `ssh -O exit -o ControlPath=<socket> my-host`.
 
 For a two-machine test, install Whale Cal on both machines, run the daemon on
 the machine that should own the calendar, and define it as an SSH alias on the

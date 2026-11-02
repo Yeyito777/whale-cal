@@ -7,6 +7,7 @@ import { deadlineKey, type DeadlineFilter } from "./deadline-list";
 import { addDays, addMonths, eventIsCompleted, occurrencesForRange, todayKey } from "@whale-cal/shared/dates";
 import type { CalendarEvent, CalendarItemKind, CalendarView, EventDraft, EventPatch } from "@whale-cal/shared/types";
 import { DaemonClient, type ClientEvent } from "./client";
+import { takeEarlySshProcess } from "./early-ssh";
 import { runCommand, type CommandAction } from "./commands";
 import { PromptController } from "./prompt";
 import { daySchedule } from "./day-schedule";
@@ -20,6 +21,7 @@ import { InputBuffer, parseInput, type KeyEvent, type MouseEvent } from "./input
 import { LAUNCH_USAGE, parseLaunchArgs } from "./launch-args";
 import { loadPreferences, savePreferences } from "./preferences";
 import { render } from "./render";
+import { reusingSshConnector } from "./ssh-mux";
 import {
   deadlineCompletionTargets, deadlinesInView, markDeadline, moveDeadlineSelection, setDeadlineFilter, createEditor, createState, editorDraft, editorItemKind, setEditorItemKind, eventsOnSelectedDate,
   moveDate, selectDate, selectedCalendar, selectedOccurrence, setNotice, settleEditorSave, syncEditorDates, toggleCalendarVisibility, visibleEvents, type AppState, type EditorState,
@@ -39,6 +41,11 @@ let terminalReady = false;
 let renderTimer: ReturnType<typeof setTimeout> | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 let noticeTimer: ReturnType<typeof setTimeout> | null = null;
+let spinnerTimer: ReturnType<typeof setInterval> | null = null;
+/** An --ssh launch until its route connects: a failed or cancelled switch falls back to the local daemon. */
+let launchingRemote = false;
+/** Why an --ssh launch fell back, shown once the local daemon connects. */
+let launchFallbackNotice: { text: string; kind: "info" | "error" } | null = null;
 const pending = new Map<string, string>();
 const promptController = new PromptController();
 const statusTimer = setInterval(() => scheduleRender(), 1000);
@@ -81,24 +88,53 @@ function settle(reqId: string): void {
   notice(message, "success");
 }
 
-function onClientEvent(event: ClientEvent): void {
-  if (event.type === "route_status") {
-    state.connected = event.state === "connected";
-    if (event.state === "failed" && state.editor?.saving) {
-      state.editor.saving = undefined;
-      state.editor.error = "Connection lost. Save status is unknown; check the day before retrying.";
-    }
-    if (event.state === "connected") state.remoteAlias = event.mode === "remote" ? event.alias ?? null : null;
-    if (event.state === "connected") {
-      state.notice = null;
-      scheduleRender();
-    } else notice(event.message, event.state === "failed" ? "error" : "warning");
-    return;
+/** The SSH progress view replaces the calendar while a route switch connects and loads. */
+function setSshConnecting(value: AppState["sshConnecting"]): void {
+  state.sshConnecting = value;
+  if (value && !spinnerTimer) spinnerTimer = setInterval(() => scheduleRender(), 80);
+  else if (!value && spinnerTimer) { clearInterval(spinnerTimer); spinnerTimer = null; }
+}
+
+/** An --ssh launch that didn't reach its host opens the local daemon instead, saying why. */
+function fallBackToLocal(reason: { text: string; kind: "info" | "error" }): void {
+  launchingRemote = false;
+  launchFallbackNotice = reason;
+  client.connect().catch(() => scheduleReconnect());
+}
+
+function onRouteStatus(event: Extract<ClientEvent, { type: "route_status" }>): void {
+  state.connected = client.connected;
+  if (event.state === "failed" && state.editor?.saving) {
+    state.editor.saving = undefined;
+    state.editor.error = "Connection lost. Save status is unknown; check the day before retrying.";
   }
+  if (event.state === "connected") state.remoteAlias = event.mode === "remote" ? event.alias ?? null : null;
+  if (event.state === "switching") setSshConnecting({ phase: "probing", message: event.message });
+  else if (event.state === "connected" && event.switched) {
+    setSshConnecting({
+      phase: "loading",
+      message: event.mode === "remote" ? `Loading remote Whale Cal daemon through SSH alias ${event.alias}…` : "Loading local Whale Cal daemon…",
+    });
+  } else if (!client.switchPending) setSshConnecting(null); // The old route can drop or return mid-switch.
+
+  if (event.state === "connected" && event.switched) launchingRemote = false;
+  if (launchingRemote && (event.state === "failed" || event.state === "cancelled")) {
+    fallBackToLocal({ text: event.message, kind: event.state === "failed" ? "error" : "info" });
+  } else if (event.state === "connected" && event.silent) {
+    state.notice = null;
+    if (launchFallbackNotice) notice(launchFallbackNotice.text, launchFallbackNotice.kind);
+    launchFallbackNotice = null;
+  } else if (event.state !== "switching") notice(event.message, event.state === "failed" ? "error" : "info");
+  scheduleRender();
+}
+
+function onClientEvent(event: ClientEvent): void {
+  if (event.type === "route_status") { onRouteStatus(event); return; }
   switch (event.type) {
     case "bootstrap":
       state.database = event.database;
       state.connected = true;
+      if (state.sshConnecting?.phase === "loading") setSshConnecting(null);
       state.selectedCalendarIndex = Math.min(state.selectedCalendarIndex, Math.max(0, event.database.calendars.length - 1));
       state.selectedEventIndex = Math.min(state.selectedEventIndex, Math.max(0, eventsOnSelectedDate(state).length - 1));
       scheduleRender();
@@ -527,6 +563,13 @@ function handleNormalKey(key: KeyEvent): void {
 }
 
 function handleKey(key: KeyEvent): void {
+  if (state.sshConnecting) {
+    if (key.type === "ctrl-c") cleanup();
+    else if (key.type === "escape") void client.useLocal();
+    // The route switch keeps the sidebar as it is: a Ctrl+S pressed while connecting must not be lost.
+    else if (key.type === "ctrl-s") { handleFocusKey(state, key); scheduleRender(); }
+    return;
+  }
   if (key.type === "ctrl-shift-r") {
     const requested = client.restartDaemon();
     notice(requested ? "Restarting cald…" : "Cannot restart cald while disconnected.", requested ? "info" : "error");
@@ -568,7 +611,8 @@ function clickPrompt(col: number): void {
 }
 
 function handleMouse(event: MouseEvent): void {
-  if (state.helpOpen) return;
+  // The hidden calendar's controls must not stay clickable under the progress view.
+  if (state.sshConnecting || state.helpOpen) return;
   if (isPromptFocused(state) && !state.editor && !state.confirmDelete) {
     if (state.prompt.completion && (event.button === 64 || event.button === 65)) {
       cycleCompletion(state.prompt, event.button === 64 ? -1 : 1);
@@ -754,30 +798,21 @@ function cleanup(): void {
   if (reconnectTimer) clearTimeout(reconnectTimer);
   if (noticeTimer) clearTimeout(noticeTimer);
   clearInterval(statusTimer);
+  if (spinnerTimer) clearInterval(spinnerTimer);
   try { savePreferences(state); } catch { /* terminal restoration is more important */ }
   client?.disconnect();
   restoreTerminal();
   process.exit(0);
 }
 
-/** Open an --ssh launch on its remote route, retrying in place: a closed window would hide why it failed. */
-async function connectOnLaunch(alias: string): Promise<void> {
-  state.remoteAlias = alias;
-  setNotice(state, `Connecting through SSH alias ${alias}…`);
-  try { await client.connect(); }
-  catch (error) {
-    notice(`Could not connect through ${alias}: ${error instanceof Error ? error.message : String(error)}`, "error");
-    scheduleReconnect();
-  }
-}
-
 async function main(): Promise<void> {
   const launch = parseLaunchArgs(process.argv.slice(2));
   if (launch.showHelp) { console.log(LAUNCH_USAGE); process.exit(0); }
   if (!process.stdin.isTTY || !process.stdout.isTTY) throw new Error("Whale Cal requires an interactive terminal.");
-  client = new DaemonClient(onClientEvent, undefined, launch.sshAlias);
+  client = new DaemonClient(onClientEvent, undefined, reusingSshConnector(takeEarlySshProcess));
   client.onDisconnect(scheduleReconnect);
-  // The launcher guarantees the local daemon; a remote one connects after the TUI is up.
+  // An --ssh launch opens on the SSH progress view instead; the local daemon
+  // connects only if that switch fails or is cancelled.
   if (!launch.sshAlias) await client.connect();
   setupTerminal();
   const inputBuffer = new InputBuffer();
@@ -795,7 +830,10 @@ async function main(): Promise<void> {
     invalidateFrame();
     scheduleRender(true);
   });
-  if (launch.sshAlias) void connectOnLaunch(launch.sshAlias);
+  if (launch.sshAlias) {
+    launchingRemote = true;
+    void client.switchSsh(launch.sshAlias);
+  }
   render(state);
 }
 

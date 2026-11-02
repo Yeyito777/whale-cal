@@ -79,6 +79,8 @@ export interface AppState {
   helpOpen: boolean;
   notice: Notice | null;
   remoteAlias: string | null;
+  /** An SSH route switch connecting, then loading its calendar: the progress view replaces the UI. */
+  sshConnecting: { phase: "probing" | "loading"; message: string } | null;
   connected: boolean;
   cols: number;
   rows: number;
@@ -95,7 +97,7 @@ export function createState(): AppState {
     database: emptyDatabase(), selectedDate: todayKey(), selectedEventIndex: 0, selectedCalendarIndex: 0, selectedGroupId: null, collapsedGroupIds: [], hiddenCalendarIdsBySource: {},
     view: "month", deadlineFilter: "pending", deadlineIndex: 0, deadlineScroll: 0, deadlineSelectedKey: null, deadlineMarkedKeys: [], focus: "calendar", mainFocus: "calendar", sidebarOpen: false, prompt: null, editor: null, confirmDelete: null,
     dayOpen: false, detailScroll: 0, dayTimelineScroll: null, helpOpen: false, notice: { text: "Connecting to cald…", kind: "info", at: Date.now() }, remoteAlias: null,
-    connected: false, cols: process.stdout.columns || 100, rows: process.stdout.rows || 30, pendingKeys: "",
+    sshConnecting: null, connected: false, cols: process.stdout.columns || 100, rows: process.stdout.rows || 30, pendingKeys: "",
     layout: { sidebarWidth: 0, calendarRows: [], monthCells: [], mainLeft: 1, bodyTop: 2, bodyBottom: 20, actions: [], eventRows: [], editorFields: [] },
   };
 }

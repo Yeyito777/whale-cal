@@ -165,3 +165,26 @@ describe("calendar layouts", () => {
     }
   });
 });
+
+describe("SSH progress view", () => {
+  test("replaces the calendar with the top bar and a spinner until the route's calendar is in", () => {
+    const state = fixture(80, 20);
+    state.sshConnecting = { phase: "probing", message: "Connecting to remote Whale Cal daemon through SSH alias whale…" };
+    const frame = buildFrame(state);
+    const text = frame.rows.map(stripAnsi);
+    expect(text[0]!.trim()).toBe("Whale Cal");
+    expect(text[1]).toBe("─".repeat(80));
+    expect(text[2]).toMatch(/^ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Connecting to remote Whale Cal daemon through SSH alias whale…/);
+    expect(text.join("\n")).not.toContain("Event 00");
+    expect(state.layout.actions).toEqual([]);
+    expect(frame.rows.every(row => width(row) === 80)).toBe(true);
+  });
+
+  test("keeps an open sidebar's place, empty", () => {
+    const state = fixture(80, 20);
+    Object.assign(state, { sidebarOpen: true, sshConnecting: { phase: "loading", message: "Loading remote Whale Cal daemon through SSH alias whale…" } });
+    const row = stripAnsi(buildFrame(state).rows[2]!);
+    expect(row).toMatch(/^ {24}│ [⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Loading remote/);
+    expect(row).not.toContain("Calendars");
+  });
+});

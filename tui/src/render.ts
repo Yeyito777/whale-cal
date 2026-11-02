@@ -55,7 +55,19 @@ function eventLabel(state: AppState, occurrence: EventOccurrence, max: number): 
   return `${color}${event.kind === "deadline" ? "◆" : "•"} ${plain}${theme.reset}`;
 }
 
+const SPINNER = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+function emptyLayout(sidebarWidth: number, bodyTop: number, bodyBottom: number): AppState["layout"] {
+  return { sidebarWidth, calendarRows: [], monthCells: [], mainLeft: sidebarWidth + 1, bodyTop, bodyBottom, actions: [], eventRows: [], editorFields: [] };
+}
+
+function sidebarWidthFor(state: AppState): number {
+  return state.sidebarOpen ? Math.min(31, Math.max(1, Math.floor(state.cols * 0.32))) : 0;
+}
+
 function renderTopbar(state: AppState): string {
+  // The route being left and its month mean nothing while another one connects.
+  if (state.sshConnecting) return segment(` ${theme.accent}${theme.bold}Whale Cal${theme.boldOff}`, state.cols, theme.sidebarBg);
   const route = state.remoteAlias ? `SSH:${state.remoteAlias}` : "local";
   const status = state.connected ? "● synced" : "○ offline";
   const title = ` ${theme.accent}${theme.bold}Whale Cal${theme.boldOff}${theme.muted} · ${state.view === "deadlines" && !state.dayOpen ? "Deadlines" : formatMonthYear(state.selectedDate)}`;
@@ -467,16 +479,36 @@ function renderCompletion(state: AppState, rows: string[]): void {
   }
 }
 
+/** The SSH progress view: only the top bar and a spinner until the new route's calendar is in. */
+function buildConnectingFrame(state: AppState, connecting: NonNullable<AppState["sshConnecting"]>): { rows: string[]; cursor: string } {
+  const rows = Array.from({ length: state.rows }, () => segment("", state.cols));
+  rows[0] = renderTopbar(state);
+  if (state.rows > 1) rows[1] = segment(`${theme.borderUnfocused}${"─".repeat(state.cols)}`, state.cols);
+  // An empty sidebar keeps its place, so Ctrl+S still shows what it will open to.
+  const sidebarWidth = sidebarWidthFor(state);
+  const mainWidth = state.cols - sidebarWidth;
+  const sidebar = sidebarWidth ? segment("", sidebarWidth - 1, theme.sidebarBg) + `${theme.appBg}${theme.borderUnfocused}│${theme.reset}` : "";
+  const spinner = SPINNER[Math.floor(Date.now() / 80) % SPINNER.length];
+  const lines = wrapText(`${spinner} ${connecting.message}`, Math.max(1, mainWidth - 2));
+  for (let index = 2; index < state.rows; index++) {
+    const line = lines[index - 2];
+    rows[index] = segment(sidebar + segment(line ? ` ${theme.warning}${line}` : "", mainWidth), state.cols);
+  }
+  state.layout = emptyLayout(sidebarWidth, 3, state.rows);
+  return { rows, cursor: cursorAt(1, 1, cursorBlock, false) };
+}
+
 export function buildFrame(state: AppState): { rows: string[]; cursor: string } {
   if (state.focus === "sidebar" && !state.sidebarOpen) state.focus = "calendar";
+  if (state.sshConnecting) return buildConnectingFrame(state, state.sshConnecting);
   const rows = Array.from({ length: state.rows }, () => segment("", state.cols));
   rows[0] = renderTopbar(state);
   const footerTop = Math.max(3, state.rows - STATUSLINE_HEIGHT - 2);
   const bodyTop = 3;
   const bodyHeight = Math.max(0, footerTop - bodyTop);
-  const sidebarWidth = state.sidebarOpen ? Math.min(31, Math.max(1, Math.floor(state.cols * 0.32))) : 0;
+  const sidebarWidth = sidebarWidthFor(state);
   const mainWidth = state.cols - sidebarWidth;
-  state.layout = { sidebarWidth, calendarRows: [], monthCells: [], mainLeft: sidebarWidth + 1, bodyTop, bodyBottom: footerTop - 1, actions: [], eventRows: [], editorFields: [] };
+  state.layout = emptyLayout(sidebarWidth, bodyTop, footerTop - 1);
   rows[1] = renderToolbar(state);
   const sidebar = sidebarWidth ? renderSidebar(state, bodyHeight, sidebarWidth) : [];
   const main = state.dayOpen ? Array.from({ length: bodyHeight }, () => segment("", mainWidth))

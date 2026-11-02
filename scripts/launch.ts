@@ -3,7 +3,9 @@ import { connect } from "node:net";
 import { resolve } from "node:path";
 import { existsSync } from "node:fs";
 import { isWindows, socketPath } from "../shared/src/paths";
+import { offerEarlySshProcess } from "../tui/src/early-ssh";
 import { LAUNCH_USAGE, parseLaunchArgs, type LaunchOptions } from "../tui/src/launch-args";
+import { spawnReusingSshProxy } from "../tui/src/ssh-mux";
 
 const root = resolve(import.meta.dir, "..");
 
@@ -53,8 +55,11 @@ catch (error) {
   process.exit(2);
 }
 if (launch.showHelp) { console.log(LAUNCH_USAGE); process.exit(0); }
-// An --ssh launch talks to the remote cald only, so it never needs a local one.
-if (!launch.sshAlias) await ensureDaemon();
-const tui = spawn(process.execPath, [resolve(root, "tui/src/main.ts"), ...args], { stdio: "inherit", cwd: root });
-tui.once("exit", code => process.exit(code ?? 0));
-tui.once("error", error => { console.error(error.message); process.exit(1); });
+if (launch.sshAlias) {
+  // SSH starts before the TUI's modules load, so its handshake overlaps them.
+  offerEarlySshProcess(launch.sshAlias, spawnReusingSshProxy(launch.sshAlias));
+  // The local daemon is only the fallback for a failed or cancelled switch: never wait for it.
+  ensureDaemon().catch(() => {});
+} else await ensureDaemon();
+// In-process: a second Bun runtime would only add its startup to every launch.
+await import("../tui/src/main");
